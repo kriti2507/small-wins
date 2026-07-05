@@ -1,0 +1,137 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Small Wins</title>
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body>
+    <a class="back" href="/">← Back</a>
+    <h1 id="title">…</h1>
+
+    <div class="summary-box">
+      <div id="graph"></div>
+    </div>
+
+    <div class="toolbar">
+      <button class="primary" id="add-btn">+ Add entry</button>
+    </div>
+
+    <form class="form hidden" id="add-form">
+      <div id="form-fields"></div>
+      <label>
+        Date
+        <input type="date" name="date" required />
+      </label>
+      <div class="toolbar">
+        <button type="submit" class="primary">Save</button>
+        <button type="button" id="cancel-btn">Cancel</button>
+      </div>
+    </form>
+
+    <ul class="run-list" id="entry-list"></ul>
+
+    <script src="graph.js"></script>
+    <script>
+      const slug = new URLSearchParams(location.search).get("name");
+      const graphEl = document.getElementById("graph");
+      const listEl = document.getElementById("entry-list");
+      const form = document.getElementById("add-form");
+      const formFields = document.getElementById("form-fields");
+      let topic = null;
+
+      function buildForm() {
+        formFields.innerHTML = "";
+        topic.fields.forEach((f) => {
+          const label = document.createElement("label");
+          let input;
+          if (f.type === "pace") {
+            input = `<input type="text" name="${f.key}" placeholder="8'35&quot;" />`;
+          } else if (f.type === "number") {
+            input = `<input type="number" step="any" name="${f.key}" />`;
+          } else {
+            input = `<input type="text" name="${f.key}" />`;
+          }
+          label.innerHTML = `${f.label}${input}`;
+          formFields.appendChild(label);
+        });
+      }
+
+      function renderList(entries) {
+        listEl.innerHTML = "";
+        const ordered = [...entries].sort((a, b) => (a.date < b.date ? 1 : -1));
+        const titleField = topic.fields.find((f) => f.type === "text");
+        ordered.forEach((entry) => {
+          const li = document.createElement("li");
+          li.className = "run-item";
+          const heading =
+            (titleField && entry[titleField.key]) || entry.date || "Entry";
+          const meta = topic.fields
+            .filter((f) => f !== titleField)
+            .map((f) => `${f.label}: ${formatValue(f, entry[f.key])}`)
+            .concat(`Date: ${entry.date}`)
+            .join(" · ");
+          li.innerHTML =
+            `<strong>${heading}</strong><span class="meta">${meta}</span>`;
+          listEl.appendChild(li);
+        });
+      }
+
+      function loadEntries() {
+        fetch(`/api/topics/${slug}/entries`)
+          .then((r) => r.json())
+          .then((entries) => {
+            renderGraph(graphEl, topic, entries);
+            renderList(entries);
+          });
+      }
+
+      document.getElementById("add-btn").onclick = () =>
+        form.classList.remove("hidden");
+      document.getElementById("cancel-btn").onclick = () =>
+        form.classList.add("hidden");
+
+      form.onsubmit = (e) => {
+        e.preventDefault();
+        const data = Object.fromEntries(new FormData(form).entries());
+        for (const f of topic.fields) {
+          if (f.type === "pace" && data[f.key]) {
+            const sec = parsePace(data[f.key]);
+            if (isNaN(sec)) {
+              alert(`${f.label}: use min'sec, e.g. 8'35" or 8:35`);
+              return;
+            }
+            data[f.key] = sec;
+          }
+        }
+        fetch(`/api/topics/${slug}/entries`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(data),
+        })
+          .then((r) => r.json())
+          .then(() => {
+            form.reset();
+            form.classList.add("hidden");
+            loadEntries();
+          });
+      };
+
+      // Load the topic config, then everything else.
+      fetch("/api/topics")
+        .then((r) => r.json())
+        .then((topics) => {
+          topic = topics.find((t) => t.slug === slug);
+          if (!topic) {
+            document.getElementById("title").textContent = "Unknown topic";
+            return;
+          }
+          document.getElementById("title").textContent = topic.name;
+          document.title = `${topic.name} — Small Wins`;
+          buildForm();
+          loadEntries();
+        });
+    </script>
+  </body>
+</html>

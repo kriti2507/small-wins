@@ -9,27 +9,119 @@
   <body>
     <h1>Small Wins</h1>
 
-    <div class="aspect-grid">
-      <div class="aspect-box">
-        <h2>Runs</h2>
-        <div id="graph"></div>
-        <a class="btn primary" href="/runs">Learn more</a>
-      </div>
+    <div class="aspect-grid" id="aspect-grid"></div>
 
-      <div
-        class="aspect-box add-more"
-        onclick="alert('Coming soon!')"
-        title="Add another aspect (coming soon)"
-      >
-        + Add more
+    <!-- Create-topic form (hidden until "+ Add more" is clicked) -->
+    <form class="form hidden" id="topic-form">
+      <h2>New aspect</h2>
+      <label>
+        Name
+        <input type="text" name="name" placeholder="Hikes" required />
+      </label>
+
+      <div id="fields"></div>
+      <button type="button" id="add-field">+ Add field</button>
+
+      <div class="toolbar">
+        <button type="submit" class="primary">Create</button>
+        <button type="button" id="topic-cancel">Cancel</button>
       </div>
-    </div>
+    </form>
 
     <script src="graph.js"></script>
     <script>
-      fetch("/api/runs")
-        .then((r) => r.json())
-        .then((runs) => renderGraph(document.getElementById("graph"), runs));
+      const grid = document.getElementById("aspect-grid");
+      const topicForm = document.getElementById("topic-form");
+      const fieldsEl = document.getElementById("fields");
+
+      function renderTopics(topics) {
+        grid.innerHTML = "";
+        topics.forEach((topic) => {
+          const box = document.createElement("div");
+          box.className = "aspect-box";
+          box.innerHTML =
+            `<h2>${topic.name}</h2><div class="graph"></div>` +
+            `<a class="btn primary" href="/topic?name=${topic.slug}">Learn more</a>`;
+          grid.appendChild(box);
+          fetch(`/api/topics/${topic.slug}/entries`)
+            .then((r) => r.json())
+            .then((entries) =>
+              renderGraph(box.querySelector(".graph"), topic, entries)
+            );
+        });
+
+        const add = document.createElement("div");
+        add.className = "aspect-box add-more";
+        add.textContent = "+ Add more";
+        add.onclick = () => topicForm.classList.remove("hidden");
+        grid.appendChild(add);
+      }
+
+      // A field-definition row for the create-topic form.
+      function addFieldRow() {
+        const row = document.createElement("div");
+        row.className = "field-row";
+        row.innerHTML = `
+          <input type="text" placeholder="Field label (e.g. Distance)" class="f-label" />
+          <select class="f-type">
+            <option value="number">number</option>
+            <option value="text">text</option>
+            <option value="pace">pace</option>
+          </select>
+          <select class="f-dir">
+            <option value="higher">higher is better</option>
+            <option value="lower">lower is better</option>
+            <option value="none">not scored</option>
+          </select>
+          <button type="button" class="f-remove">✕</button>`;
+        const typeSel = row.querySelector(".f-type");
+        const dirSel = row.querySelector(".f-dir");
+        typeSel.onchange = () => {
+          dirSel.disabled = typeSel.value === "text";
+          if (typeSel.value === "text") dirSel.value = "none";
+        };
+        row.querySelector(".f-remove").onclick = () => row.remove();
+        fieldsEl.appendChild(row);
+      }
+
+      document.getElementById("add-field").onclick = addFieldRow;
+      document.getElementById("topic-cancel").onclick = () =>
+        topicForm.classList.add("hidden");
+
+      topicForm.onsubmit = (e) => {
+        e.preventDefault();
+        const fields = [...fieldsEl.querySelectorAll(".field-row")]
+          .map((row) => ({
+            label: row.querySelector(".f-label").value.trim(),
+            type: row.querySelector(".f-type").value,
+            direction: row.querySelector(".f-dir").value,
+          }))
+          .filter((f) => f.label);
+
+        fetch("/api/topics", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            name: topicForm.querySelector("[name=name]").value,
+            fields,
+          }),
+        }).then((r) => {
+          if (!r.ok) return r.json().then((d) => alert(d.error || "Error"));
+          topicForm.reset();
+          topicForm.classList.add("hidden");
+          fieldsEl.innerHTML = "";
+          load();
+        });
+      };
+
+      function load() {
+        fetch("/api/topics")
+          .then((r) => r.json())
+          .then(renderTopics);
+      }
+
+      addFieldRow();
+      load();
     </script>
   </body>
 </html>

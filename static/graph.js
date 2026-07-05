@@ -1,7 +1,10 @@
-// Shared summary-graph rendering + scoring, used on both home and runs pages.
+// Shared helpers: pace parsing, field formatting, scoring, and the summary
+// graph. Used on both the home and topic pages.
 
-// Pace is stored as seconds per km. Accepts "8'35\"", "8:35", or a plain
-// decimal number of minutes (e.g. "8.5"). Returns seconds, or NaN if invalid.
+// --- Pace (stored as seconds per km) ---------------------------------------
+
+// Accepts "8'35\"", "8:35", or a plain decimal number of minutes ("8.5").
+// Returns seconds, or NaN if invalid.
 function parsePace(str) {
   if (str == null) return NaN;
   const s = String(str).trim();
@@ -21,20 +24,44 @@ function formatPace(sec) {
   return `${m}'${String(s).padStart(2, "0")}"`;
 }
 
-// Compute a 0..1 composite score for each run: distance (more is better)
-// and pace (faster/lower is better), each normalized across all runs, averaged.
-function scoreRuns(runs) {
-  const distances = runs.map((r) => r.distance);
-  const paces = runs.map((r) => r.pace);
-  const minD = Math.min(...distances);
-  const maxD = Math.max(...distances);
-  const minP = Math.min(...paces);
-  const maxP = Math.max(...paces);
+// Human-readable value for a field.
+function formatValue(field, value) {
+  if (value == null || value === "") return "—";
+  if (field.type === "pace") return formatPace(value);
+  return value;
+}
 
-  return runs.map((r) => {
-    const dNorm = maxD === minD ? 0.5 : (r.distance - minD) / (maxD - minD);
-    const pNorm = maxP === minP ? 0.5 : (maxP - r.pace) / (maxP - minP);
-    return (dNorm + pNorm) / 2;
+// --- Scoring ---------------------------------------------------------------
+
+// Returns a 0..1 composite score for each entry. Scored fields are those with
+// direction "higher" or "lower"; each is normalized across all entries and the
+// per-entry scores are averaged. Entries with no scorable values get 0.5.
+function scoreEntries(topic, entries) {
+  const scored = topic.fields.filter(
+    (f) => f.direction === "higher" || f.direction === "lower"
+  );
+
+  const ranges = {};
+  scored.forEach((f) => {
+    const vals = entries
+      .map((e) => e[f.key])
+      .filter((v) => v != null && !isNaN(v));
+    ranges[f.key] = { min: Math.min(...vals), max: Math.max(...vals) };
+  });
+
+  return entries.map((e) => {
+    const parts = [];
+    scored.forEach((f) => {
+      const v = e[f.key];
+      if (v == null || isNaN(v)) return;
+      const { min, max } = ranges[f.key];
+      let norm;
+      if (max === min) norm = 0.5;
+      else norm = f.direction === "higher" ? (v - min) / (max - min) : (max - v) / (max - min);
+      parts.push(norm);
+    });
+    if (parts.length === 0) return 0.5;
+    return parts.reduce((a, b) => a + b, 0) / parts.length;
   });
 }
 
@@ -46,36 +73,35 @@ function scoreToColor(score) {
   return GREENS[idx];
 }
 
-// Render the graph into `container` (a DOM element).
-function renderGraph(container, runs) {
+// --- Graph -----------------------------------------------------------------
+
+// Render one box per entry (oldest -> newest) into `container`.
+function renderGraph(container, topic, entries) {
   container.innerHTML = "";
-  if (runs.length === 0) {
+  if (entries.length === 0) {
     const empty = document.createElement("p");
     empty.className = "empty";
-    empty.textContent = "No runs yet. Add one to see your summary.";
+    empty.textContent = "No entries yet. Add one to see your summary.";
     container.appendChild(empty);
     return;
   }
 
-  // Oldest -> newest, left to right.
-  const ordered = [...runs].sort((a, b) => (a.date < b.date ? -1 : 1));
-  const scores = scoreRuns(ordered);
+  const ordered = [...entries].sort((a, b) => (a.date < b.date ? -1 : 1));
+  const scores = scoreEntries(topic, ordered);
 
   const grid = document.createElement("div");
   grid.className = "graph-grid";
 
-  ordered.forEach((run, i) => {
+  ordered.forEach((entry, i) => {
     const box = document.createElement("div");
     box.className = "graph-box";
     box.style.backgroundColor = scoreToColor(scores[i]);
 
-    const hr = run.heart_rate != null ? `${run.heart_rate} bpm` : "—";
-    box.title =
-      `${run.date}` +
-      `\n${run.title || "Untitled run"}` +
-      `\nDistance: ${run.distance} km` +
-      `\nPace: ${formatPace(run.pace)}/km` +
-      `\nHeart rate: ${hr}`;
+    const lines = [entry.date || "(no date)"];
+    topic.fields.forEach((f) => {
+      lines.push(`${f.label}: ${formatValue(f, entry[f.key])}`);
+    });
+    box.title = lines.join("\n");
 
     grid.appendChild(box);
   });
