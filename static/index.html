@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Small Wins</title>
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body>
+    <h1>Small Wins</h1>
+
+    <div class="aspect-grid">
+      <div class="aspect-box">
+        <h2>Runs</h2>
+        <div id="graph"></div>
+        <a class="btn primary" href="/runs">Learn more</a>
+      </div>
+
+      <div
+        class="aspect-box add-more"
+        onclick="alert('Coming soon!')"
+        title="Add another aspect (coming soon)"
+      >
+        + Add more
+      </div>
+    </div>
+
+    <script src="graph.js"></script>
+    <script>
+      fetch("/api/runs")
+        .then((r) => r.json())
+        .then((runs) => renderGraph(document.getElementById("graph"), runs));
+    </script>
+  </body>
+</html>
