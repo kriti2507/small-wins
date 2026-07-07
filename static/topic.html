@@ -11,6 +11,18 @@
     <h1 id="title">…</h1>
 
     <div class="summary-box">
+      <div class="capsule-controls" id="range-controls">
+        <button type="button" data-preset="30" class="preset">30d</button>
+        <button type="button" data-preset="90" class="preset">90d</button>
+        <button type="button" data-preset="365" class="preset">1y</button>
+        <button type="button" data-preset="all" class="preset active">All</button>
+        <button type="button" data-preset="custom" class="preset">Custom</button>
+        <span class="custom-range hidden" id="custom-range">
+          <input type="date" id="range-start" />
+          <span>→</span>
+          <input type="date" id="range-end" />
+        </span>
+      </div>
       <div id="graph"></div>
     </div>
 
@@ -39,8 +51,14 @@
       const listEl = document.getElementById("entry-list");
       const form = document.getElementById("add-form");
       const formFields = document.getElementById("form-fields");
+      const controlsEl = document.getElementById("range-controls");
+      const customRangeEl = document.getElementById("custom-range");
+      const startEl = document.getElementById("range-start");
+      const endEl = document.getElementById("range-end");
       let topic = null;
       let colorIndex = 0;
+      let entries = [];
+      let activePreset = "all";
 
       function buildForm() {
         formFields.innerHTML = "";
@@ -79,11 +97,74 @@
         });
       }
 
+      // Local "YYYY-MM-DD" for a Date.
+      function isoDate(d) {
+        const y = d.getFullYear();
+        const m = String(d.getMonth() + 1).padStart(2, "0");
+        const day = String(d.getDate()).padStart(2, "0");
+        return `${y}-${m}-${day}`;
+      }
+
+      // Range for a preset, always ending today. "all" spans from the earliest
+      // entry; a number spans that many days back (inclusive of today).
+      function presetRange(preset) {
+        const today = new Date();
+        const end = isoDate(today);
+        if (preset === "all") {
+          const dates = entries.map((e) => e.date).filter(Boolean).sort();
+          return { start: dates.length ? dates[0] : end, end };
+        }
+        const days = parseInt(preset, 10);
+        const start = new Date(today);
+        start.setDate(start.getDate() - (days - 1));
+        return { start: isoDate(start), end };
+      }
+
+      function currentRange() {
+        if (activePreset === "custom") {
+          return { start: startEl.value, end: endEl.value };
+        }
+        return presetRange(activePreset);
+      }
+
+      function drawGraph() {
+        renderContributions(graphEl, topic, entries, colorIndex, currentRange());
+      }
+
+      controlsEl.querySelectorAll(".preset").forEach((btn) => {
+        btn.onclick = () => {
+          controlsEl
+            .querySelectorAll(".preset")
+            .forEach((b) => b.classList.remove("active"));
+          btn.classList.add("active");
+          activePreset = btn.dataset.preset;
+          if (activePreset === "custom") {
+            customRangeEl.classList.remove("hidden");
+            // Seed the pickers from the last 90 days if empty.
+            if (!startEl.value || !endEl.value) {
+              const r = presetRange("90");
+              startEl.value = r.start;
+              endEl.value = r.end;
+            }
+          } else {
+            customRangeEl.classList.add("hidden");
+          }
+          drawGraph();
+        };
+      });
+
+      [startEl, endEl].forEach((el) => {
+        el.onchange = () => {
+          if (activePreset === "custom") drawGraph();
+        };
+      });
+
       function loadEntries() {
         fetch(`/api/topics/${slug}/entries`)
           .then((r) => r.json())
-          .then((entries) => {
-            renderGraph(graphEl, topic, entries, colorIndex);
+          .then((data) => {
+            entries = data;
+            drawGraph();
             renderList(entries);
           });
       }

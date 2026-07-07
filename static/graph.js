@@ -158,6 +158,99 @@ function renderGraph(container, topic, entries, colorIndex = 0) {
   container.appendChild(grid);
 }
 
+// --- Contribution graph (topic page) ---------------------------------------
+
+// A GitHub-style contribution graph: one cell per calendar day across `range`
+// ({start, end}), so gaps between entries show up as empty space. Weeks are
+// columns (Mon->Sun, top to bottom) flowing left->right. A day's shade is the
+// average score of that day's entries (scored over the topic's full entry set,
+// so shades match the rest of the app); days with no entry are a faint neutral.
+// A month-label row sits above the grid for time context.
+function renderContributions(container, topic, entries, colorIndex, range) {
+  container.innerHTML = "";
+
+  if (entries.length === 0) {
+    const empty = document.createElement("p");
+    empty.className = "empty";
+    empty.textContent = "No entries yet. Add one to see your summary.";
+    container.appendChild(empty);
+    return;
+  }
+
+  const days = enumerateDays(range.start, range.end);
+  if (days.length === 0) {
+    const empty = document.createElement("p");
+    empty.className = "empty";
+    empty.textContent = "No entries in this period.";
+    container.appendChild(empty);
+    return;
+  }
+
+  const palette = rampFor(topic, colorIndex);
+
+  // Score every entry over the full set, then bucket by date so days with
+  // several entries can be averaged into a single cell.
+  const scores = scoreEntries(topic, entries);
+  const byDay = {};
+  entries.forEach((entry, i) => {
+    if (!entry.date) return;
+    const b = byDay[entry.date] || (byDay[entry.date] = { entries: [], sum: 0 });
+    b.entries.push(entry);
+    b.sum += scores[i];
+  });
+
+  // Pad to whole weeks: from the Monday on/before the range start to the Sunday
+  // on/after the range end, so the 7 weekday rows stay aligned.
+  const gridStart = addDays(range.start, -weekdayIndex(range.start));
+  const gridEnd = addDays(range.end, 6 - weekdayIndex(range.end));
+  const gridDays = enumerateDays(gridStart, gridEnd);
+  const numWeeks = gridDays.length / 7;
+  const inRange = new Set(days);
+
+  // Month labels: one slot per week column, labeled when the week's Monday
+  // falls in a different month than the previous column's.
+  const months = document.createElement("div");
+  months.className = "contrib-months";
+  let prevMonth = -1;
+  for (let w = 0; w < numWeeks; w++) {
+    const monday = gridDays[w * 7];
+    const month = parseInt(monday.split("-")[1], 10) - 1;
+    const slot = document.createElement("span");
+    if (month !== prevMonth) {
+      slot.textContent = MONTHS[month];
+      prevMonth = month;
+    }
+    months.appendChild(slot);
+  }
+
+  const grid = document.createElement("div");
+  grid.className = "contrib-grid";
+
+  gridDays.forEach((day) => {
+    const cell = document.createElement("div");
+    cell.className = "contrib-cell";
+    const bucket = byDay[day];
+    if (!inRange.has(day)) {
+      cell.classList.add("pad"); // padding outside the selected range
+    } else if (bucket) {
+      cell.style.backgroundColor = scoreToColor(bucket.sum / bucket.entries.length, palette);
+      const lines = [];
+      bucket.entries.forEach((entry) => {
+        lines.push(entry.date);
+        topic.fields.forEach((f) => lines.push(`${f.label}: ${formatValue(f, entry[f.key])}`));
+      });
+      cell.title = lines.join("\n");
+    } else {
+      cell.classList.add("empty-day");
+      cell.title = day;
+    }
+    grid.appendChild(cell);
+  });
+
+  container.appendChild(months);
+  container.appendChild(grid);
+}
+
 // --- Time capsule ----------------------------------------------------------
 
 // Local "YYYY-MM-DD" for a Date.
