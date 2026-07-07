@@ -14,6 +14,106 @@ h1 {
   margin-top: 0;
 }
 
+/* Time capsule */
+.capsule {
+  background: #fff;
+  border: 1px solid #d8dee4;
+  border-radius: 10px;
+  padding: 1.25rem;
+  margin-bottom: 1.5rem;
+}
+
+.capsule-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  flex-wrap: wrap;
+  margin-bottom: 1rem;
+}
+
+.capsule-head h2 {
+  margin: 0;
+  font-size: 1.1rem;
+}
+
+.capsule-controls {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  flex-wrap: wrap;
+}
+
+.preset {
+  padding: 0.3rem 0.6rem;
+  font-size: 0.85rem;
+}
+
+.preset.active {
+  background: #1e6b10;
+  border-color: #1e6b10;
+  color: #fff;
+}
+
+.custom-range {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.custom-range input {
+  font: inherit;
+  padding: 0.25rem 0.4rem;
+  border: 1px solid #d8dee4;
+  border-radius: 6px;
+}
+
+.calendar {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 4px;
+  max-width: 560px;
+}
+
+.weekday-head {
+  font-size: 0.7rem;
+  font-weight: 600;
+  color: #57606a;
+  text-align: center;
+  padding-bottom: 0.15rem;
+}
+
+.day-cell {
+  border: 1px solid #eaecef;
+  border-radius: 6px;
+  min-height: 48px;
+  padding: 0.25rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+}
+
+.day-cell.outside {
+  border-color: transparent;
+  background: #f2f3f5;
+}
+
+.day-cell.outside .day-label {
+  color: #b6bcc2;
+}
+
+.day-label {
+  font-size: 0.7rem;
+  color: #57606a;
+  line-height: 1;
+}
+
+.day-boxes {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px;
+}
+
 /* Home grid of aspect boxes */
 .aspect-grid {
   display: grid;
@@ -77,8 +177,8 @@ button,
 
 button.primary,
 .btn.primary {
-  background: #1e6b10;
-  border-color: #1e6b10;
+  background: var(--topic-color, #1e6b10);
+  border-color: var(--topic-color, #1e6b10);
   color: #fff;
 }
 
@@ -155,7 +255,35 @@ button.primary,
 
 a.back {
   text-decoration: none;
-  color: #1e6b10;
+  color: var(--topic-color, #1e6b10);
+}
+
+/* Color picker in the create-topic form */
+.color-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  font-size: 0.9rem;
+}
+
+.swatch-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+
+.swatch {
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border-radius: 50%;
+  border: 2px solid transparent;
+  cursor: pointer;
+}
+
+.swatch.selected {
+  border-color: #1f2328;
+  box-shadow: 0 0 0 2px #fff inset;
 }
 
 /* Create-topic field rows */

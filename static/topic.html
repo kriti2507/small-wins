@@ -40,6 +40,7 @@
       const form = document.getElementById("add-form");
       const formFields = document.getElementById("form-fields");
       let topic = null;
+      let colorIndex = 0;
 
       function buildForm() {
         formFields.innerHTML = "";
@@ -82,7 +83,7 @@
         fetch(`/api/topics/${slug}/entries`)
           .then((r) => r.json())
           .then((entries) => {
-            renderGraph(graphEl, topic, entries);
+            renderGraph(graphEl, topic, entries, colorIndex);
             renderList(entries);
           });
       }
@@ -122,13 +123,19 @@
       fetch("/api/topics")
         .then((r) => r.json())
         .then((topics) => {
-          topic = topics.find((t) => t.slug === slug);
+          colorIndex = topics.findIndex((t) => t.slug === slug);
+          topic = topics[colorIndex];
           if (!topic) {
             document.getElementById("title").textContent = "Unknown topic";
             return;
           }
           document.getElementById("title").textContent = topic.name;
           document.title = `${topic.name} — Small Wins`;
+          // Tint this page's buttons/links with the topic's color.
+          document.documentElement.style.setProperty(
+            "--topic-color",
+            buttonColorFor(topic, colorIndex)
+          );
           buildForm();
           loadEntries();
         });

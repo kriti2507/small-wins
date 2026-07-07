@@ -9,6 +9,25 @@
   <body>
     <h1>Small Wins</h1>
 
+    <!-- Time capsule: all topics' entries for a period, colored by topic -->
+    <section class="capsule" id="capsule">
+      <div class="capsule-head">
+        <h2>Time Capsule</h2>
+        <div class="capsule-controls" id="capsule-controls">
+          <button type="button" data-preset="7" class="preset active">Last 7 days</button>
+          <button type="button" data-preset="30" class="preset">Last 30 days</button>
+          <button type="button" data-preset="month" class="preset">This month</button>
+          <button type="button" data-preset="custom" class="preset">Custom</button>
+          <span class="custom-range hidden" id="custom-range">
+            <input type="date" id="capsule-start" />
+            <span>→</span>
+            <input type="date" id="capsule-end" />
+          </span>
+        </div>
+      </div>
+      <div id="calendar"></div>
+    </section>
+
     <div class="aspect-grid" id="aspect-grid"></div>
 
     <!-- Create-topic form (hidden until "+ Add more" is clicked) -->
@@ -18,6 +37,11 @@
         Name
         <input type="text" name="name" placeholder="Hikes" required />
       </label>
+
+      <div class="color-field">
+        <span class="color-field-label">Color</span>
+        <div class="swatch-row" id="swatch-row"></div>
+      </div>
 
       <div id="fields"></div>
       <button type="button" id="add-field">+ Add field</button>
@@ -33,21 +57,47 @@
       const grid = document.getElementById("aspect-grid");
       const topicForm = document.getElementById("topic-form");
       const fieldsEl = document.getElementById("fields");
+      const swatchRow = document.getElementById("swatch-row");
+      let selectedColor = null;
 
-      function renderTopics(topics) {
+      // Build the color swatch picker; select the first color by default.
+      function buildSwatches() {
+        swatchRow.innerHTML = "";
+        paletteSwatches().forEach(({ id, name, color }, i) => {
+          const sw = document.createElement("button");
+          sw.type = "button";
+          sw.className = "swatch" + (i === 0 ? " selected" : "");
+          sw.style.backgroundColor = color;
+          sw.title = name;
+          sw.onclick = () => {
+            selectedColor = id;
+            swatchRow
+              .querySelectorAll(".swatch")
+              .forEach((s) => s.classList.remove("selected"));
+            sw.classList.add("selected");
+          };
+          swatchRow.appendChild(sw);
+          if (i === 0) selectedColor = id;
+        });
+      }
+
+      // Render the per-topic grid from already-fetched data.
+      function renderTopics(topicsData) {
         grid.innerHTML = "";
-        topics.forEach((topic) => {
+        topicsData.forEach(({ topic, colorIndex, entries }) => {
           const box = document.createElement("div");
           box.className = "aspect-box";
           box.innerHTML =
             `<h2>${topic.name}</h2><div class="graph"></div>` +
             `<a class="btn primary" href="/topic?name=${topic.slug}">Learn more</a>`;
           grid.appendChild(box);
-          fetch(`/api/topics/${topic.slug}/entries`)
-            .then((r) => r.json())
-            .then((entries) =>
-              renderGraph(box.querySelector(".graph"), topic, entries)
-            );
+          renderGraph(box.querySelector(".graph"), topic, entries, colorIndex);
+
+          // Tint the "Learn more" button with the topic's color.
+          const learn = box.querySelector(".btn.primary");
+          const tint = buttonColorFor(topic, colorIndex);
+          learn.style.backgroundColor = tint;
+          learn.style.borderColor = tint;
         });
 
         const add = document.createElement("div");
@@ -103,6 +153,7 @@
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             name: topicForm.querySelector("[name=name]").value,
+            color: selectedColor,
             fields,
           }),
         }).then((r) => {
@@ -110,17 +161,107 @@
           topicForm.reset();
           topicForm.classList.add("hidden");
           fieldsEl.innerHTML = "";
+          buildSwatches();
           load();
         });
       };
 
+      // --- Time capsule ------------------------------------------------------
+
+      const calendarEl = document.getElementById("calendar");
+      const controlsEl = document.getElementById("capsule-controls");
+      const customRangeEl = document.getElementById("custom-range");
+      const startEl = document.getElementById("capsule-start");
+      const endEl = document.getElementById("capsule-end");
+      let topicsData = [];
+
+      // Local "YYYY-MM-DD" for a Date.
+      function isoDate(d) {
+        const y = d.getFullYear();
+        const m = String(d.getMonth() + 1).padStart(2, "0");
+        const day = String(d.getDate()).padStart(2, "0");
+        return `${y}-${m}-${day}`;
+      }
+
+      // Range for a preset ("7", "30", "month"), inclusive of today.
+      function presetRange(preset) {
+        const today = new Date();
+        const end = isoDate(today);
+        if (preset === "month") {
+          const first = new Date(today.getFullYear(), today.getMonth(), 1);
+          return { start: isoDate(first), end };
+        }
+        const days = parseInt(preset, 10);
+        const start = new Date(today);
+        start.setDate(start.getDate() - (days - 1));
+        return { start: isoDate(start), end };
+      }
+
+      function customRange() {
+        return { start: startEl.value, end: endEl.value };
+      }
+
+      function drawCapsule(range) {
+        renderCapsule(calendarEl, topicsData, range);
+      }
+
+      controlsEl.querySelectorAll(".preset").forEach((btn) => {
+        btn.onclick = () => {
+          controlsEl
+            .querySelectorAll(".preset")
+            .forEach((b) => b.classList.remove("active"));
+          btn.classList.add("active");
+          const preset = btn.dataset.preset;
+          if (preset === "custom") {
+            customRangeEl.classList.remove("hidden");
+            // Seed custom inputs from the last 7 days if empty.
+            if (!startEl.value || !endEl.value) {
+              const r = presetRange("7");
+              startEl.value = r.start;
+              endEl.value = r.end;
+            }
+            drawCapsule(customRange());
+          } else {
+            customRangeEl.classList.add("hidden");
+            drawCapsule(presetRange(preset));
+          }
+        };
+      });
+
+      [startEl, endEl].forEach((el) => {
+        el.onchange = () => drawCapsule(customRange());
+      });
+
+      // --- Load --------------------------------------------------------------
+
       function load() {
         fetch("/api/topics")
           .then((r) => r.json())
-          .then(renderTopics);
+          .then((topics) =>
+            Promise.all(
+              topics.map((topic, colorIndex) =>
+                fetch(`/api/topics/${topic.slug}/entries`)
+                  .then((r) => r.json())
+                  .then((entries) => {
+                    // Score over the topic's full entry set so a box's shade
+                    // matches the topic page, then index by entry id.
+                    const scores = scoreEntries(topic, entries);
+                    const scoreById = {};
+                    entries.forEach((e, i) => (scoreById[e.id] = scores[i]));
+                    return { topic, colorIndex, entries, scoreById };
+                  })
+              )
+            )
+          )
+          .then((data) => {
+            topicsData = data;
+            renderTopics(topicsData);
+            drawCapsule(presetRange("7"));
+          });
       }
 
       addFieldRow();
+      buildSwatches();
       load();
     </script>
   </body>

@@ -9,6 +9,13 @@ DATA_DIR = os.path.join(os.path.dirname(__file__), "data")
 TOPICS_FILE = os.path.join(DATA_DIR, "topics.json")
 
 
+# Color ids the frontend palette offers; the first is the default.
+COLORS = [
+    "green", "blue", "orange", "purple", "teal", "rose",
+    "red", "amber", "indigo", "cyan", "lime", "slate",
+]
+
+
 def slugify(s):
     return re.sub(r"[^a-z0-9]+", "_", s.lower()).strip("_")
 
@@ -30,6 +37,7 @@ DEFAULT_TOPICS = [
     {
         "slug": "runs",
         "name": "Runs",
+        "color": "green",
         "fields": [
             {"key": "title", "label": "Title", "type": "text", "direction": "none"},
             {"key": "distance", "label": "Distance (km)", "type": "number", "direction": "higher"},
@@ -93,6 +101,10 @@ def add_topic():
     if any(t["slug"] == slug for t in topics):
         return jsonify({"error": f"A topic '{name}' already exists."}), 409
 
+    color = data.get("color")
+    if color not in COLORS:
+        color = COLORS[0]
+
     fields = []
     for f in data.get("fields", []):
         label = (f.get("label") or "").strip()
@@ -106,7 +118,7 @@ def add_topic():
             {"key": slugify(label), "label": label, "type": ftype, "direction": direction}
         )
 
-    topic = {"slug": slug, "name": name, "fields": fields}
+    topic = {"slug": slug, "name": name, "color": color, "fields": fields}
     topics.append(topic)
     save_json(TOPICS_FILE, topics)
     save_json(entries_path(slug), [])
