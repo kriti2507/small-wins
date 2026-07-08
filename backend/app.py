@@ -1,9 +1,11 @@
 import json
 import os
 import re
-from flask import Flask, jsonify, request, send_from_directory
+from flask import Flask, jsonify, request
 
-app = Flask(__name__, static_folder="static", static_url_path="")
+# API only: the React frontend is served separately (Vite in dev, a static
+# host in prod). This app exposes just the /api/* contract.
+app = Flask(__name__, static_folder=None)
 
 DATA_DIR = os.path.join(os.path.dirname(__file__), "data")
 TOPICS_FILE = os.path.join(DATA_DIR, "topics.json")
@@ -68,18 +70,6 @@ def entries_path(slug):
 
 def load_entries(slug):
     return load_json(entries_path(slug), [])
-
-
-# --- Pages -----------------------------------------------------------------
-
-@app.route("/")
-def home():
-    return send_from_directory(app.static_folder, "index.html")
-
-
-@app.route("/topic")
-def topic_page():
-    return send_from_directory(app.static_folder, "topic.html")
 
 
 # --- Topics API ------------------------------------------------------------

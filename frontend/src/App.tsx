@@ -1,0 +1,14 @@
+import { BrowserRouter, Routes, Route } from "react-router-dom";
+import HomePage from "./pages/HomePage";
+import TopicPage from "./pages/TopicPage";
+
+export default function App() {
+  return (
+    <BrowserRouter>
+      <Routes>
+        <Route path="/" element={<HomePage />} />
+        <Route path="/topic/:slug" element={<TopicPage />} />
+      </Routes>
+    </BrowserRouter>
+  );
+}
