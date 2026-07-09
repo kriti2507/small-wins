@@ -704,6 +704,7 @@ a.back:hover {
 
 /* Shared prose typography for the article view and the editor. */
 .prose {
+  width: 100%; /* the editor is a flex column; margin:auto would shrink-wrap to 0 */
   max-width: 65ch;
   margin: 1.25rem auto 0;
   font-size: 1.06rem;
