@@ -1,4 +1,5 @@
 import { Node } from "@tiptap/core";
+import { TextSelection } from "@tiptap/pm/state";
 
 export type FigureWidth = "normal" | "wide";
 
@@ -61,6 +62,29 @@ export const Figure = Node.create({
         (width) =>
         ({ commands }) =>
           commands.updateAttributes(this.name, { width }),
+    };
+  },
+
+  addKeyboardShortcuts() {
+    return {
+      // Enter in the caption exits into a new paragraph below the figure
+      // (splitting is impossible because the node is isolating).
+      Enter: () => {
+        const { state } = this.editor;
+        const { $from } = state.selection;
+        if (!state.selection.empty || $from.parent.type.name !== this.name) {
+          return false;
+        }
+        return this.editor.commands.command(({ tr, dispatch }) => {
+          const after = tr.selection.$from.after();
+          if (dispatch) {
+            tr.insert(after, state.schema.nodes.paragraph.create());
+            tr.setSelection(TextSelection.create(tr.doc, after + 1));
+            tr.scrollIntoView();
+          }
+          return true;
+        });
+      },
     };
   },
 });
