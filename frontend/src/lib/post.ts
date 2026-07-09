@@ -38,36 +38,3 @@ function nodeHasContent(node: DocNode): boolean {
 export function hasPost(entry: Entry): boolean {
   return (toDoc(entry.body).content ?? []).some(nodeHasContent);
 }
-
-// Drop empty/whitespace-only text blocks; keep order and all image blocks.
-export function normalize(blocks: Block[] | PostDoc | undefined): Block[] {
-  if (!blocks || !Array.isArray(blocks)) return [];
-  return blocks.filter(
-    (b) => b.type !== "text" || b.text.trim() !== "",
-  );
-}
-
-// Move the block at `index` one slot up or down; no-op at the ends.
-export function moveBlock(
-  blocks: Block[],
-  index: number,
-  dir: "up" | "down",
-): Block[] {
-  const target = dir === "up" ? index - 1 : index + 1;
-  if (target < 0 || target >= blocks.length) return blocks;
-  const next = [...blocks];
-  [next[index], next[target]] = [next[target], next[index]];
-  return next;
-}
-
-export function removeBlock(blocks: Block[], index: number): Block[] {
-  return blocks.filter((_, i) => i !== index);
-}
-
-export function addText(blocks: Block[]): Block[] {
-  return [...blocks, { type: "text", text: "" }];
-}
-
-export function addImage(blocks: Block[], url: string): Block[] {
-  return [...blocks, { type: "image", url }];
-}
