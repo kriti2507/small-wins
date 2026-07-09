@@ -20,6 +20,7 @@ const emptyRow = (): FieldRow => ({ label: "", type: "number", direction: "highe
 export default function TopicForm({ onCreated, onCancel }: Props) {
   const [name, setName] = useState("");
   const [color, setColor] = useState<string>(PALETTE_ORDER[0]);
+  const [layout, setLayout] = useState("photo-top");
   const [rows, setRows] = useState<FieldRow[]>([emptyRow()]);
 
   function updateRow(i: number, patch: Partial<FieldRow>) {
@@ -37,10 +38,11 @@ export default function TopicForm({ onCreated, onCancel }: Props) {
       .map((r) => ({ label: r.label.trim(), type: r.type, direction: r.direction }))
       .filter((f) => f.label);
 
-    addTopic({ name, color, layout: "photo-top", fields })
+    addTopic({ name, color, layout, fields })
       .then(() => {
         setName("");
         setColor(PALETTE_ORDER[0]);
+        setLayout("photo-top");
         setRows([emptyRow()]);
         onCreated();
       })
@@ -66,6 +68,14 @@ export default function TopicForm({ onCreated, onCancel }: Props) {
         <span className="color-field-label">Color</span>
         <ColorPicker selected={color} onSelect={setColor} />
       </div>
+
+      <label>
+        Tile layout
+        <select value={layout} onChange={(e) => setLayout(e.target.value)}>
+          <option value="photo-top">Photo on top</option>
+          <option value="thumbnail">Side thumbnail</option>
+        </select>
+      </label>
 
       <div>
         {rows.map((row, i) => (
