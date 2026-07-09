@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import type { Topic, Entry, DateRange } from "../types";
-import { getTopics, getEntries } from "../api/client";
+import { getTopics, getEntries, setTopicLayout } from "../api/client";
 import { buttonColorFor } from "../lib/palette";
 import { isoDate } from "../lib/dates";
 import ContributionGraph from "../components/ContributionGraph";
@@ -30,6 +30,13 @@ export default function TopicPage() {
 
   function loadEntries(s: string) {
     getEntries(s).then(setEntries);
+  }
+
+  function changeLayout(layout: string) {
+    if (!topic || (topic.layout ?? "photo-top") === layout) return;
+    setTopicLayout(topic.slug, layout)
+      .then((updated) => setTopic(updated))
+      .catch((err) => alert(err.message || "Could not change layout."));
   }
 
   useEffect(() => {
@@ -126,6 +133,22 @@ export default function TopicPage() {
         <button className="primary" onClick={() => setShowForm(true)}>
           + Add entry
         </button>
+        <div className="layout-toggle" role="group" aria-label="Tile layout">
+          <button
+            type="button"
+            className={(topic.layout ?? "photo-top") !== "thumbnail" ? "active" : ""}
+            onClick={() => changeLayout("photo-top")}
+          >
+            Photo
+          </button>
+          <button
+            type="button"
+            className={topic.layout === "thumbnail" ? "active" : ""}
+            onClick={() => changeLayout("thumbnail")}
+          >
+            Thumbnail
+          </button>
+        </div>
       </div>
 
       {showForm && (

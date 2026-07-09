@@ -418,3 +418,23 @@ a.back {
   font-size: 0.85rem;
   margin: 0;
 }
+
+.layout-toggle {
+  display: inline-flex;
+  border: 1px solid #d8dee4;
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.layout-toggle button {
+  border: 0;
+  background: #fff;
+  padding: 0.4rem 0.75rem;
+  font-size: 0.85rem;
+  cursor: pointer;
+}
+
+.layout-toggle button.active {
+  background: var(--topic-color, #2eb500);
+  color: #fff;
+}
