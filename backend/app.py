@@ -204,30 +204,16 @@ def find_entry(entries, entry_id):
     return next((e for e in entries if e["id"] == entry_id), None)
 
 
+MAX_BODY_BYTES = 1_000_000  # serialized cap; well under the 5 MB request limit
+
+
 def valid_body(body):
-    """A post body must be a list of {type: text|image} blocks."""
-    if not isinstance(body, list):
+    """A post body is a TipTap doc: {"type": "doc", "content": [...]}."""
+    if not isinstance(body, dict) or body.get("type") != "doc":
         return False
-    for block in body:
-        if not isinstance(block, dict):
-            return False
-        if block.get("type") == "text":
-            if not isinstance(block.get("text"), str):
-                return False
-        elif block.get("type") == "image":
-            if not isinstance(block.get("url"), str):
-                return False
-        else:
-            return False
-    return True
-
-
-def clean_body(body):
-    """Drop empty/whitespace-only text blocks; keep order and image blocks."""
-    return [
-        b for b in body
-        if b["type"] != "text" or b["text"].strip() != ""
-    ]
+    if not isinstance(body.get("content", []), list):
+        return False
+    return len(json.dumps(body)) <= MAX_BODY_BYTES
 
 
 @app.route("/api/topics/<slug>/entries/<int:entry_id>", methods=["GET"])
@@ -255,7 +241,7 @@ def update_entry(slug, entry_id):
         body = data["body"]
         if not valid_body(body):
             return jsonify({"error": "Invalid post body."}), 400
-        entry["body"] = clean_body(body)
+        entry["body"] = body
 
     save_json(entries_path(slug), entries)
     return jsonify(entry)
