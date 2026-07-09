@@ -17,6 +17,7 @@ interface Props {
 // StarterKit's input rules.
 export default function RichPostEditor({ initial, saving, onSave, onCancel }: Props) {
   const [uploadError, setUploadError] = useState<string | null>(null);
+  const [uploading, setUploading] = useState(false);
   const fileInput = useRef<HTMLInputElement>(null);
   const editor = useEditor({
     extensions: postExtensions(),
@@ -28,9 +29,14 @@ export default function RichPostEditor({ initial, saving, onSave, onCancel }: Pr
 
   function onPickPhoto(file: File) {
     setUploadError(null);
+    setUploading(true);
     uploadImage(file)
-      .then(({ url }) => editor!.chain().focus().insertFigure({ src: url }).run())
-      .catch((err) => setUploadError(err.message || "Could not upload photo."));
+      .then(({ url }) => {
+        if (editor!.isDestroyed) return;
+        editor!.chain().focus().insertFigure({ src: url }).run();
+      })
+      .catch((err) => setUploadError(err.message || "Could not upload photo."))
+      .finally(() => setUploading(false));
   }
 
   return (
@@ -57,10 +63,10 @@ export default function RichPostEditor({ initial, saving, onSave, onCancel }: Pr
         <button
           type="button"
           className="primary"
-          disabled={saving}
+          disabled={saving || uploading}
           onClick={() => onSave(editor.getJSON() as unknown as PostDoc)}
         >
-          {saving ? "Saving…" : "Save"}
+          {saving ? "Saving…" : uploading ? "Uploading…" : "Save"}
         </button>
       </div>
     </div>
