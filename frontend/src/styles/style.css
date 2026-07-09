@@ -237,29 +237,79 @@ button.primary,
   margin-bottom: 1rem;
 }
 
-.run-list {
-  list-style: none;
-  padding: 0;
-  margin: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 0.5rem;
+.tile-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: 1rem;
 }
 
-.run-item {
+.tile {
   background: #fff;
   border: 1px solid #d8dee4;
-  border-radius: 8px;
-  padding: 0.75rem 1rem;
-  display: flex;
-  justify-content: space-between;
-  gap: 1rem;
-  flex-wrap: wrap;
+  border-radius: 12px;
+  overflow: hidden;
+  box-shadow: 0 1px 2px rgba(27, 31, 36, 0.06);
 }
 
-.run-item .meta {
+.tile .photo {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.tile .photo .initial {
+  color: #fff;
+  font-size: 2.4rem;
+  font-weight: 700;
+  opacity: 0.95;
+}
+
+.tile .photo img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.tile .body {
+  padding: 0.8rem 0.9rem;
+}
+
+.tile .body h4 {
+  margin: 0 0 0.35rem;
+  font-size: 1rem;
+}
+
+.tile .body .meta {
   color: #57606a;
-  font-size: 0.9rem;
+  font-size: 0.82rem;
+  line-height: 1.5;
+}
+
+/* Layout A: photo banner on top */
+.tile.photo-top .photo {
+  height: 130px;
+}
+
+/* Layout B: square thumbnail on the left */
+.tile.thumbnail {
+  display: flex;
+}
+
+.tile.thumbnail .photo {
+  width: 96px;
+  flex: none;
+  align-self: stretch;
+}
+
+.tile.thumbnail .photo .initial {
+  font-size: 1.8rem;
+}
+
+.tile.thumbnail .body {
+  flex: 1;
 }
 
 /* Add-entry form */

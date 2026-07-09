@@ -139,7 +139,7 @@ export default function TopicPage() {
         />
       )}
 
-      <EntryList topic={topic} entries={entries} />
+      <EntryList topic={topic} entries={entries} colorIndex={colorIndex} />
     </>
   );
 }
