@@ -17,6 +17,9 @@ COLORS = [
     "red", "amber", "indigo", "cyan", "lime", "slate",
 ]
 
+# Tile layouts a topic can use for its entry list; the first is the default.
+LAYOUTS = ("photo-top", "thumbnail")
+
 
 def slugify(s):
     return re.sub(r"[^a-z0-9]+", "_", s.lower()).strip("_")
@@ -95,6 +98,10 @@ def add_topic():
     if color not in COLORS:
         color = COLORS[0]
 
+    layout = data.get("layout")
+    if layout not in LAYOUTS:
+        layout = LAYOUTS[0]
+
     fields = []
     for f in data.get("fields", []):
         label = (f.get("label") or "").strip()
@@ -108,11 +115,28 @@ def add_topic():
             {"key": slugify(label), "label": label, "type": ftype, "direction": direction}
         )
 
-    topic = {"slug": slug, "name": name, "color": color, "fields": fields}
+    topic = {"slug": slug, "name": name, "color": color, "layout": layout, "fields": fields}
     topics.append(topic)
     save_json(TOPICS_FILE, topics)
     save_json(entries_path(slug), [])
     return jsonify(topic), 201
+
+
+@app.route("/api/topics/<slug>", methods=["PATCH"])
+def update_topic(slug):
+    topics = load_topics()
+    topic = next((t for t in topics if t["slug"] == slug), None)
+    if not topic:
+        return jsonify({"error": "Unknown topic."}), 404
+
+    data = request.get_json(force=True)
+    if "layout" in data:
+        if data["layout"] not in LAYOUTS:
+            return jsonify({"error": "Invalid layout."}), 400
+        topic["layout"] = data["layout"]
+
+    save_json(TOPICS_FILE, topics)
+    return jsonify(topic)
 
 
 # --- Entries API -----------------------------------------------------------
