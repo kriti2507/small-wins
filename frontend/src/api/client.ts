@@ -1,4 +1,4 @@
-import type { Topic, Entry, Block } from "../types";
+import type { Topic, Entry, PostDoc } from "../types";
 
 async function json<T>(res: Response): Promise<T> {
   const data = await res.json();
@@ -47,7 +47,7 @@ export function getEntry(slug: string, id: number): Promise<Entry> {
 export function saveEntryBody(
   slug: string,
   id: number,
-  body: Block[],
+  body: PostDoc,
 ): Promise<Entry> {
   return fetch(`/api/topics/${slug}/entries/${id}`, {
     method: "PATCH",
