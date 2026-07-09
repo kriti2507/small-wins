@@ -22,6 +22,9 @@ export default function EntryPage() {
   const doc = useMemo(() => toDoc(entry?.body), [entry]);
 
   useEffect(() => {
+    setEntry(null);
+    setEditing(false);
+    setNotFound(false);
     getTopics().then((topics) => {
       const idx = topics.findIndex((t) => t.slug === slug);
       const found = topics[idx];
@@ -93,6 +96,7 @@ export default function EntryPage() {
 
         {editing ? (
           <RichPostEditor
+            key={entry.id}
             initial={doc}
             saving={saving}
             onSave={save}
