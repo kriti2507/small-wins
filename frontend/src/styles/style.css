@@ -1,26 +1,81 @@
+/* Small Wins — warm paper-journal theme with scrapbook touches.
+   Fonts: Fraunces (display serif), Lora (body serif), Caveat (handwriting). */
+
+:root {
+  --paper: #faf5ec;
+  --card: #fffdf8;
+  --border: #e7dcc9;
+  --border-soft: #efe5d3;
+  --ink: #3d3229;
+  --ink-strong: #3b3128;
+  --ink-muted: #8a7a63;
+  --ink-faint: #b3a58e;
+  --accent: #b3654a;
+  --shadow-tint: 93, 78, 55;
+  --font-display: "Fraunces", Georgia, serif;
+  --font-body: "Lora", Georgia, serif;
+  --font-hand: "Caveat", cursive;
+}
+
 * {
   box-sizing: border-box;
 }
 
+html {
+  scroll-behavior: smooth;
+}
+
 body {
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-  margin: 0;
-  padding: 2rem;
-  background: #f7f8fa;
-  color: #1f2328;
+  font-family: var(--font-body);
+  margin: 0 auto;
+  max-width: 1100px;
+  padding: 2.5rem 2rem 4rem;
+  background: var(--paper);
+  color: var(--ink);
+  line-height: 1.6;
+}
+
+/* Subtle paper grain so the page doesn't feel like flat pixels. */
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: 10;
+  pointer-events: none;
+  opacity: 0.04;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2'/%3E%3C/filter%3E%3Crect width='160' height='160' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+
+::selection {
+  background: #eedfc8;
 }
 
 h1 {
   margin-top: 0;
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: 2.3rem;
+  letter-spacing: -0.015em;
+  line-height: 1.15;
+  color: var(--ink-strong);
+  text-wrap: balance;
+}
+
+h2,
+h3 {
+  font-family: var(--font-display);
+  font-weight: 600;
+  color: var(--ink-strong);
 }
 
 /* Time capsule */
 .capsule {
-  background: #fff;
-  border: 1px solid #d8dee4;
-  border-radius: 10px;
-  padding: 1.25rem;
-  margin-bottom: 1.5rem;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 1.4rem 1.5rem;
+  margin-bottom: 1.75rem;
+  box-shadow: 0 2px 10px -4px rgba(var(--shadow-tint), 0.12);
 }
 
 .capsule-head {
@@ -30,11 +85,13 @@ h1 {
   gap: 1rem;
   flex-wrap: wrap;
   margin-bottom: 1rem;
+  padding-bottom: 0.75rem;
+  border-bottom: 2px dotted var(--border);
 }
 
 .capsule-head h2 {
   margin: 0;
-  font-size: 1.1rem;
+  font-size: 1.2rem;
 }
 
 .capsule-controls {
@@ -45,14 +102,14 @@ h1 {
 }
 
 .preset {
-  padding: 0.3rem 0.6rem;
+  padding: 0.3rem 0.7rem;
   font-size: 0.85rem;
 }
 
 .preset.active {
-  background: var(--topic-color, #1e6b10);
-  border-color: var(--topic-color, #1e6b10);
-  color: #fff;
+  background: var(--topic-color, var(--accent));
+  border-color: var(--topic-color, var(--accent));
+  color: var(--card);
 }
 
 .custom-range {
@@ -64,8 +121,10 @@ h1 {
 .custom-range input {
   font: inherit;
   padding: 0.25rem 0.4rem;
-  border: 1px solid #d8dee4;
-  border-radius: 6px;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--ink);
 }
 
 .calendar {
@@ -76,16 +135,17 @@ h1 {
 }
 
 .weekday-head {
-  font-size: 0.7rem;
-  font-weight: 600;
-  color: #57606a;
+  font-family: var(--font-body);
+  font-style: italic;
+  font-size: 0.72rem;
+  color: var(--ink-muted);
   text-align: center;
-  padding-bottom: 0.15rem;
+  padding-bottom: 0.2rem;
 }
 
 .day-cell {
-  border: 1px solid #eaecef;
-  border-radius: 6px;
+  border: 1px dotted var(--border);
+  border-radius: 8px;
   min-height: 48px;
   padding: 0.25rem;
   display: flex;
@@ -95,16 +155,17 @@ h1 {
 
 .day-cell.outside {
   border-color: transparent;
-  background: #f2f3f5;
+  background: #f3ecdf;
 }
 
 .day-cell.outside .day-label {
-  color: #b6bcc2;
+  color: var(--ink-faint);
 }
 
 .day-label {
-  font-size: 0.7rem;
-  color: #57606a;
+  font-family: var(--font-hand);
+  font-size: 0.85rem;
+  color: var(--ink-muted);
   line-height: 1;
 }
 
@@ -118,30 +179,41 @@ h1 {
 .aspect-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
-  gap: 1rem;
+  gap: 1.25rem;
 }
 
 .aspect-box {
-  background: #fff;
-  border: 1px solid #d8dee4;
-  border-radius: 10px;
-  padding: 1.25rem;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 1.4rem 1.5rem;
+  box-shadow: 0 2px 10px -4px rgba(var(--shadow-tint), 0.12);
 }
 
 .aspect-box h2 {
   margin: 0 0 0.75rem;
-  font-size: 1.1rem;
+  font-size: 1.2rem;
 }
 
 .add-more {
   display: flex;
   align-items: center;
   justify-content: center;
-  color: #8a939b;
-  font-size: 1.1rem;
-  border-style: dashed;
+  color: var(--ink-muted);
+  font-family: var(--font-hand);
+  font-size: 1.4rem;
+  background: transparent;
+  border: 2px dashed var(--border);
+  box-shadow: none;
   cursor: pointer;
   min-height: 120px;
+  transition: border-color 0.2s ease, color 0.2s ease, background 0.2s ease;
+}
+
+.add-more:hover {
+  border-color: var(--ink-faint);
+  color: var(--accent);
+  background: var(--card);
 }
 
 /* Summary graph */
@@ -155,25 +227,32 @@ h1 {
 .graph-box {
   width: 14px;
   height: 14px;
-  border-radius: 3px;
+  border-radius: 4px;
   cursor: pointer;
+  transition: transform 0.15s ease;
+}
+
+.graph-box:hover {
+  transform: scale(1.25);
 }
 
 .empty {
-  color: #8a939b;
-  font-size: 0.9rem;
+  color: var(--ink-muted);
+  font-family: var(--font-hand);
+  font-size: 1.15rem;
 }
 
-/* Contribution graph (topic page) — GitHub-style day grid */
+/* Contribution graph (topic page) — journal-style day grid */
 .contrib-months {
   display: grid;
   grid-auto-flow: column;
   grid-auto-columns: 13px;
   gap: 3px;
   margin-bottom: 4px;
-  height: 12px;
-  font-size: 10px;
-  color: #57606a;
+  height: 14px;
+  font-family: var(--font-hand);
+  font-size: 12px;
+  color: var(--ink-muted);
 }
 
 .contrib-months span {
@@ -191,12 +270,12 @@ h1 {
 .contrib-cell {
   width: 13px;
   height: 13px;
-  border-radius: 2px;
-  background: #ebedf0;
+  border-radius: 3px;
+  background: #efe8da;
 }
 
 .contrib-cell.empty-day {
-  background: #ebedf0;
+  background: #efe8da;
 }
 
 .contrib-cell.pad {
@@ -207,48 +286,125 @@ h1 {
 button,
 .btn {
   font: inherit;
-  border: 1px solid #d8dee4;
-  background: #fff;
-  padding: 0.45rem 0.9rem;
-  border-radius: 8px;
+  font-family: var(--font-body);
+  border: 1px solid var(--border);
+  background: var(--card);
+  color: var(--ink);
+  padding: 0.45rem 1rem;
+  border-radius: 999px;
   cursor: pointer;
+  transition: transform 0.2s ease, box-shadow 0.2s ease, background 0.2s ease,
+    border-color 0.2s ease;
+}
+
+button:hover,
+.btn:hover {
+  border-color: var(--ink-faint);
+  box-shadow: 0 2px 8px -2px rgba(var(--shadow-tint), 0.2);
+  transform: translateY(-1px);
+}
+
+button:active,
+.btn:active {
+  transform: translateY(0) scale(0.98);
+  box-shadow: none;
+}
+
+button:disabled {
+  opacity: 0.5;
+  cursor: default;
+  transform: none;
+  box-shadow: none;
+}
+
+button:focus-visible,
+.btn:focus-visible,
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible,
+a:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
 }
 
 button.primary,
 .btn.primary {
-  background: var(--topic-color, #1e6b10);
-  border-color: var(--topic-color, #1e6b10);
-  color: #fff;
+  background: var(--topic-color, var(--accent));
+  border-color: var(--topic-color, var(--accent));
+  color: var(--card);
 }
 
 /* Runs page */
 .summary-box {
-  background: #fff;
-  border: 1px solid #d8dee4;
-  border-radius: 10px;
-  padding: 1.25rem;
-  margin-bottom: 1.5rem;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 1.4rem 1.5rem;
+  margin-bottom: 1.75rem;
+  box-shadow: 0 2px 10px -4px rgba(var(--shadow-tint), 0.12);
 }
 
 .toolbar {
   display: flex;
   gap: 0.5rem;
   align-items: center;
-  margin-bottom: 1rem;
+  margin-bottom: 1.25rem;
 }
 
+/* Entry tiles — polaroids taped into the journal. Extra top padding leaves
+   room for the washi tape that sticks up past each tile. */
 .tile-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
-  gap: 1rem;
+  gap: 1.75rem 1.5rem;
+  padding-top: 14px;
 }
 
 .tile {
-  background: #fff;
-  border: 1px solid #d8dee4;
-  border-radius: 12px;
-  overflow: hidden;
-  box-shadow: 0 1px 2px rgba(27, 31, 36, 0.06);
+  position: relative;
+  display: block;
+  color: inherit;
+  text-decoration: none;
+  background: var(--card);
+  border-radius: 4px;
+  padding: 10px 10px 4px;
+  box-shadow: 0 2px 5px rgba(var(--shadow-tint), 0.14),
+    0 12px 24px -14px rgba(var(--shadow-tint), 0.28);
+  transform: rotate(-1deg);
+  transition: transform 0.25s ease, box-shadow 0.25s ease;
+}
+
+.tile:nth-child(2n) {
+  transform: rotate(1.1deg);
+}
+
+.tile:nth-child(3n) {
+  transform: rotate(-0.4deg);
+}
+
+/* Washi tape holding the polaroid down, tinted by the topic's color. */
+.tile::before {
+  content: "";
+  position: absolute;
+  top: -11px;
+  left: 50%;
+  width: 76px;
+  height: 22px;
+  transform: translateX(-50%) rotate(-3.5deg);
+  background: var(--topic-color, var(--accent));
+  opacity: 0.33;
+  border-radius: 2px;
+  z-index: 1;
+}
+
+.tile:nth-child(2n)::before {
+  transform: translateX(-50%) rotate(3deg);
+}
+
+.tile:hover {
+  transform: rotate(0deg) translateY(-4px);
+  box-shadow: 0 4px 10px rgba(var(--shadow-tint), 0.16),
+    0 18px 32px -14px rgba(var(--shadow-tint), 0.35);
 }
 
 .tile .photo {
@@ -256,10 +412,39 @@ button.primary,
   display: flex;
   align-items: center;
   justify-content: center;
+  border-radius: 2px;
+  overflow: hidden;
+}
+
+/* "Read →" cue: hidden until the tile is hovered */
+.tile .read-cue {
+  position: absolute;
+  right: 0.5rem;
+  bottom: 0.5rem;
+  padding: 0.15rem 0.55rem;
+  border-radius: 999px;
+  background: rgba(59, 49, 40, 0.78);
+  color: var(--card);
+  font-size: 0.75rem;
+  opacity: 0;
+  transition: opacity 0.2s ease;
+}
+
+.tile:hover .read-cue {
+  opacity: 1;
+}
+
+/* Persistent marker for entries that have a written post */
+.post-dot {
+  margin-left: 0.35rem;
+  color: var(--topic-color, var(--accent));
+  font-weight: 700;
+  letter-spacing: 1px;
 }
 
 .tile .photo .initial {
-  color: #fff;
+  color: var(--card);
+  font-family: var(--font-display);
   font-size: 2.4rem;
   font-weight: 700;
   opacity: 0.95;
@@ -274,34 +459,42 @@ button.primary,
 }
 
 .tile .body {
-  padding: 0.8rem 0.9rem;
+  padding: 0.55rem 0.35rem 0.5rem;
 }
 
 .tile .body h4 {
-  margin: 0 0 0.35rem;
-  font-size: 1rem;
+  margin: 0;
+  font-family: var(--font-hand);
+  font-weight: 600;
+  font-size: 1.3rem;
+  line-height: 1.2;
+  color: var(--ink-strong);
 }
 
 .tile .body .meta {
-  color: #57606a;
-  font-size: 0.82rem;
-  line-height: 1.5;
+  font-family: var(--font-hand);
+  color: var(--ink-muted);
+  font-size: 1rem;
+  line-height: 1.4;
 }
 
 /* Layout A: photo banner on top */
 .tile.photo-top .photo {
-  height: 130px;
+  height: 150px;
 }
 
 /* Layout B: square thumbnail on the left */
 .tile.thumbnail {
   display: flex;
+  gap: 0.6rem;
+  padding: 10px;
 }
 
 .tile.thumbnail .photo {
-  width: 96px;
+  width: 92px;
   flex: none;
   align-self: stretch;
+  min-height: 80px;
 }
 
 .tile.thumbnail .photo .initial {
@@ -310,18 +503,20 @@ button.primary,
 
 .tile.thumbnail .body {
   flex: 1;
+  padding: 0.1rem 0;
 }
 
 /* Add-entry form */
 .form {
-  background: #fff;
-  border: 1px solid #d8dee4;
-  border-radius: 10px;
-  padding: 1.25rem;
-  margin-bottom: 1.5rem;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 1.4rem 1.5rem;
+  margin-bottom: 1.75rem;
   display: grid;
   gap: 0.75rem;
   max-width: 420px;
+  box-shadow: 0 2px 10px -4px rgba(var(--shadow-tint), 0.12);
 }
 
 .form label {
@@ -329,13 +524,23 @@ button.primary,
   flex-direction: column;
   font-size: 0.9rem;
   gap: 0.25rem;
+  color: var(--ink-muted);
 }
 
-.form input {
+.form input,
+.form select {
   font: inherit;
-  padding: 0.4rem 0.5rem;
-  border: 1px solid #d8dee4;
-  border-radius: 6px;
+  padding: 0.45rem 0.6rem;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--ink);
+  transition: border-color 0.2s ease;
+}
+
+.form input:focus,
+.form select:focus {
+  border-color: var(--ink-faint);
 }
 
 .hidden {
@@ -343,8 +548,17 @@ button.primary,
 }
 
 a.back {
+  display: inline-block;
   text-decoration: none;
-  color: var(--topic-color, #1e6b10);
+  font-family: var(--font-hand);
+  font-size: 1.2rem;
+  color: var(--topic-color, var(--accent));
+  margin-bottom: 0.25rem;
+  transition: transform 0.2s ease;
+}
+
+a.back:hover {
+  transform: translateX(-3px);
 }
 
 /* Color picker in the create-topic form */
@@ -353,6 +567,7 @@ a.back {
   flex-direction: column;
   gap: 0.35rem;
   font-size: 0.9rem;
+  color: var(--ink-muted);
 }
 
 .swatch-row {
@@ -371,8 +586,8 @@ a.back {
 }
 
 .swatch.selected {
-  border-color: #1f2328;
-  box-shadow: 0 0 0 2px #fff inset;
+  border-color: var(--ink-strong);
+  box-shadow: 0 0 0 2px var(--card) inset;
 }
 
 /* Create-topic field rows */
@@ -387,8 +602,10 @@ a.back {
 .field-row select {
   font: inherit;
   padding: 0.35rem 0.5rem;
-  border: 1px solid #d8dee4;
-  border-radius: 6px;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--ink);
 }
 
 .field-row .f-label {
@@ -405,36 +622,171 @@ a.back {
   gap: 0.75rem;
 }
 
+/* Preview thumb gets the same polaroid framing as the tiles. */
 .photo-preview img {
   width: 72px;
   height: 72px;
   object-fit: cover;
-  border-radius: 8px;
-  border: 1px solid #d8dee4;
+  border-radius: 2px;
+  border: 4px solid var(--card);
+  box-shadow: 0 1px 4px rgba(var(--shadow-tint), 0.25);
+  transform: rotate(-2deg);
 }
 
 .form-error {
-  color: #b81404;
+  color: #a4442d;
   font-size: 0.85rem;
   margin: 0;
 }
 
 .layout-toggle {
   display: inline-flex;
-  border: 1px solid #d8dee4;
-  border-radius: 8px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
   overflow: hidden;
 }
 
 .layout-toggle button {
   border: 0;
-  background: #fff;
-  padding: 0.4rem 0.75rem;
+  border-radius: 0;
+  background: var(--card);
+  padding: 0.4rem 0.8rem;
   font-size: 0.85rem;
   cursor: pointer;
 }
 
+.layout-toggle button:hover {
+  transform: none;
+  box-shadow: none;
+}
+
 .layout-toggle button.active {
-  background: var(--topic-color, #2eb500);
-  color: #fff;
+  background: var(--topic-color, var(--accent));
+  color: var(--card);
+}
+
+/* Entry post page */
+.post-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.post-head h1 {
+  margin-bottom: 0.25rem;
+}
+
+.post-head .meta {
+  font-family: var(--font-hand);
+  color: var(--ink-muted);
+  font-size: 1.1rem;
+}
+
+.post-empty {
+  color: var(--ink-muted);
+  font-family: var(--font-hand);
+  font-size: 1.2rem;
+}
+
+.post .post-text {
+  white-space: pre-wrap;
+  line-height: 1.8;
+  margin: 0 0 1.25rem;
+  max-width: 65ch;
+}
+
+/* Photos in a post read as prints glued into the journal. */
+.post .post-image {
+  display: block;
+  max-width: min(100%, 640px);
+  border-radius: 2px;
+  border: 10px solid var(--card);
+  border-bottom-width: 28px;
+  box-shadow: 0 2px 6px rgba(var(--shadow-tint), 0.18),
+    0 14px 28px -16px rgba(var(--shadow-tint), 0.3);
+  transform: rotate(-0.6deg);
+  margin: 1.5rem 0;
+}
+
+.post .post-image:nth-of-type(2n) {
+  transform: rotate(0.7deg);
+}
+
+/* Post editor */
+.post-editor {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.post-editor .block {
+  display: flex;
+  gap: 0.5rem;
+  align-items: flex-start;
+}
+
+.block-controls {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  flex: none;
+}
+
+.block-controls button {
+  padding: 0.2rem 0.5rem;
+  line-height: 1;
+}
+
+.block-text {
+  font: inherit;
+  flex: 1;
+  min-height: 5rem;
+  padding: 0.6rem 0.7rem;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  color: var(--ink);
+  line-height: 1.7;
+  resize: vertical;
+  transition: border-color 0.2s ease;
+}
+
+.block-text:focus {
+  border-color: var(--ink-faint);
+}
+
+.block-image {
+  max-width: 100%;
+  border-radius: 2px;
+  border: 6px solid var(--card);
+  box-shadow: 0 1px 4px rgba(var(--shadow-tint), 0.2);
+}
+
+.post-editor-actions {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+  margin-top: 0.5rem;
+}
+
+.post-editor-actions .spacer {
+  flex: 1;
+}
+
+.add-photo {
+  display: inline-block;
+  border: 1px solid var(--border);
+  background: var(--card);
+  padding: 0.45rem 1rem;
+  border-radius: 999px;
+  cursor: pointer;
+  font-size: inherit;
+  transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease;
+}
+
+.add-photo:hover {
+  border-color: var(--ink-faint);
+  box-shadow: 0 2px 8px -2px rgba(var(--shadow-tint), 0.2);
+  transform: translateY(-1px);
 }

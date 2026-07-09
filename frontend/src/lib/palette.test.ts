@@ -49,13 +49,13 @@ describe("buttonColorFor", () => {
 });
 
 describe("paletteSwatches", () => {
-  test("returns one swatch per palette with id, capitalized name, and darkest color", () => {
+  test("returns one swatch per palette with id, capitalized name, and vivid mid shade", () => {
     const swatches = paletteSwatches();
     expect(swatches.length).toBe(Object.keys(PALETTES).length);
     expect(swatches[0]).toEqual({
       id: "green",
       name: "Green",
-      color: PALETTES.green[PALETTES.green.length - 1],
+      color: PALETTES.green[2],
     });
   });
 });

@@ -20,11 +20,25 @@ export interface Topic {
   fields: Field[];
 }
 
+// A post body is an ordered list of blocks: freeform paragraphs and photos.
+export interface TextBlock {
+  type: "text";
+  text: string;
+}
+
+export interface ImageBlock {
+  type: "image";
+  url: string; // served path, e.g. "/api/uploads/ab12.jpg"
+}
+
+export type Block = TextBlock | ImageBlock;
+
 export interface Entry {
   id: number;
   date: string; // "YYYY-MM-DD"
   image?: string | null; // served path, e.g. "/api/uploads/ab12.jpg"
-  [fieldKey: string]: string | number | null | undefined;
+  body?: Block[]; // the optional blog-like post
+  [fieldKey: string]: string | number | null | undefined | Block[];
 }
 
 export interface DateRange {

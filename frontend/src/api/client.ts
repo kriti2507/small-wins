@@ -1,4 +1,4 @@
-import type { Topic, Entry } from "../types";
+import type { Topic, Entry, Block } from "../types";
 
 async function json<T>(res: Response): Promise<T> {
   const data = await res.json();
@@ -37,6 +37,22 @@ export function addEntry(
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload),
+  }).then((r) => json<Entry>(r));
+}
+
+export function getEntry(slug: string, id: number): Promise<Entry> {
+  return fetch(`/api/topics/${slug}/entries/${id}`).then((r) => json<Entry>(r));
+}
+
+export function saveEntryBody(
+  slug: string,
+  id: number,
+  body: Block[],
+): Promise<Entry> {
+  return fetch(`/api/topics/${slug}/entries/${id}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ body }),
   }).then((r) => json<Entry>(r));
 }
 

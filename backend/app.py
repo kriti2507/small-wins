@@ -200,5 +200,66 @@ def add_entry(slug):
     return jsonify(entry), 201
 
 
+def find_entry(entries, entry_id):
+    return next((e for e in entries if e["id"] == entry_id), None)
+
+
+def valid_body(body):
+    """A post body must be a list of {type: text|image} blocks."""
+    if not isinstance(body, list):
+        return False
+    for block in body:
+        if not isinstance(block, dict):
+            return False
+        if block.get("type") == "text":
+            if not isinstance(block.get("text"), str):
+                return False
+        elif block.get("type") == "image":
+            if not isinstance(block.get("url"), str):
+                return False
+        else:
+            return False
+    return True
+
+
+def clean_body(body):
+    """Drop empty/whitespace-only text blocks; keep order and image blocks."""
+    return [
+        b for b in body
+        if b["type"] != "text" or b["text"].strip() != ""
+    ]
+
+
+@app.route("/api/topics/<slug>/entries/<int:entry_id>", methods=["GET"])
+def get_entry(slug, entry_id):
+    if not find_topic(slug):
+        return jsonify({"error": "Unknown topic."}), 404
+    entry = find_entry(load_entries(slug), entry_id)
+    if not entry:
+        return jsonify({"error": "Unknown entry."}), 404
+    return jsonify(entry)
+
+
+@app.route("/api/topics/<slug>/entries/<int:entry_id>", methods=["PATCH"])
+def update_entry(slug, entry_id):
+    if not find_topic(slug):
+        return jsonify({"error": "Unknown topic."}), 404
+
+    entries = load_entries(slug)
+    entry = find_entry(entries, entry_id)
+    if not entry:
+        return jsonify({"error": "Unknown entry."}), 404
+
+    data = request.get_json(force=True)
+    if "body" in data:
+        body = data["body"]
+        if not valid_body(body):
+            return jsonify({"error": "Invalid post body."}), 400
+        entry["body"] = clean_body(body)
+
+    save_json(entries_path(slug), entries)
+    return jsonify(entry)
+
+
 if __name__ == "__main__":
     app.run(debug=True, port=5000)

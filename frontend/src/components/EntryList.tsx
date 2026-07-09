@@ -1,5 +1,7 @@
+import { Link } from "react-router-dom";
 import type { Topic, Entry } from "../types";
 import { tileModel } from "../lib/tile";
+import { hasPost } from "../lib/post";
 import { rampFor } from "../lib/palette";
 
 interface Props {
@@ -21,7 +23,11 @@ export default function EntryList({ topic, entries, colorIndex }: Props) {
       {ordered.map((entry) => {
         const t = tileModel(topic, entry);
         return (
-          <article className={`tile ${layout}`} key={entry.id}>
+          <Link
+            className={`tile ${layout}`}
+            key={entry.id}
+            to={`/topic/${topic.slug}/entry/${entry.id}`}
+          >
             <div className="photo" style={{ background: gradient }}>
               <span className="initial">{t.initial}</span>
               {t.image && (
@@ -31,12 +37,20 @@ export default function EntryList({ topic, entries, colorIndex }: Props) {
                   onError={(e) => e.currentTarget.remove()}
                 />
               )}
+              <span className="read-cue">Read →</span>
             </div>
             <div className="body">
-              <h4>{t.heading}</h4>
+              <h4>
+                {t.heading}
+                {hasPost(entry) && (
+                  <span className="post-dot" title="Has a written post">
+                    …
+                  </span>
+                )}
+              </h4>
               <span className="meta">{t.meta}</span>
             </div>
-          </article>
+          </Link>
         );
       })}
     </div>

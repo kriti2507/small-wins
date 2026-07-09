@@ -3,19 +3,21 @@ import type { Topic } from "../types";
 // A palette is 5 shades of one hue, light -> dark, so a box's shade still
 // reflects the entry's score while the hue identifies the topic. The user picks
 // a topic's color by id; the darkest shade tints that topic's buttons.
+// Softened brights: the same hues remixed to sit comfortably on warm paper —
+// saturation turned down a notch so colors read lively, not fluorescent.
 export const PALETTES: Record<string, string[]> = {
-  green: ["#d9f7c0", "#93ec5e", "#4fdc17", "#2eb500", "#1c7a00"],
-  blue: ["#cfe6ff", "#8ec2ff", "#3d92ff", "#0f66f0", "#0a4bc0"],
-  orange: ["#ffe0bd", "#ffb56b", "#ff8a1f", "#f26a00", "#c25000"],
-  purple: ["#ecd6ff", "#c98eff", "#a347ff", "#8215e6", "#6410b0"],
-  teal: ["#bff7ee", "#6fecd8", "#1fd9bd", "#06b39a", "#058070"],
-  rose: ["#ffd3e0", "#ff8fb0", "#ff4d7d", "#ed1a54", "#b8003c"],
-  red: ["#ffd2cd", "#ff8f83", "#ff4f3d", "#ed2410", "#b81404"],
-  amber: ["#fff0a8", "#ffdd52", "#ffc814", "#e6a800", "#b88200"],
-  indigo: ["#d9dcff", "#a3aaff", "#6670ff", "#3b46f0", "#2730c0"],
-  cyan: ["#c2f2ff", "#6fdfff", "#1fc6f0", "#049bc2", "#037394"],
-  lime: ["#eafcbf", "#ccf56f", "#a3e61f", "#82c200", "#5f9000"],
-  slate: ["#dfe3e8", "#b4bcc6", "#838d99", "#5a636e", "#363d45"],
+  green: ["#e0eed6", "#b5d9a0", "#8cc46c", "#5fa03e", "#417328"],
+  blue: ["#dbe7f2", "#a9c8e3", "#7aa9cf", "#5386b3", "#3a6389"],
+  orange: ["#f6e3d1", "#eec09a", "#e09a63", "#c97a40", "#9e5c2c"],
+  purple: ["#e9e0f2", "#cbb5e3", "#a984cf", "#835bab", "#5f3f80"],
+  teal: ["#d6ece8", "#a3d4cb", "#6fb8ab", "#479488", "#2f6e64"],
+  rose: ["#f5dde4", "#e5afc0", "#d1839c", "#b35d7a", "#8a4159"],
+  red: ["#f4ddd8", "#e3aca0", "#cd7f6f", "#b05a49", "#874337"],
+  amber: ["#f6ead0", "#e9cf97", "#d9b160", "#b98f39", "#8d6b27"],
+  indigo: ["#dfe1f0", "#b3b8dd", "#8890c6", "#6570ab", "#474f85"],
+  cyan: ["#d8ebf0", "#a5d2dd", "#74b5c6", "#4d94a8", "#356e7e"],
+  lime: ["#e9f0d2", "#cfdf9e", "#b0c968", "#8fa843", "#6a7d2f"],
+  slate: ["#e2e4e7", "#bcc2c9", "#929aa4", "#6a727d", "#494f58"],
 };
 
 // Ordered ids — used for the picker and for position-based fallback.
@@ -40,12 +42,16 @@ export function buttonColorFor(topic: Topic | null | undefined, i: number): stri
   return ramp[ramp.length - 1];
 }
 
+// Index of the vivid mid shade in each 5-shade ramp — used for the picker so
+// swatches read bright rather than the darkest button-tint shade.
+const SWATCH_SHADE = 2;
+
 // [{ id, name, color }] for building the color picker, in display order.
 export function paletteSwatches(): { id: string; name: string; color: string }[] {
   return PALETTE_ORDER.map((id) => ({
     id,
     name: id.charAt(0).toUpperCase() + id.slice(1),
-    color: PALETTES[id][PALETTES[id].length - 1],
+    color: PALETTES[id][SWATCH_SHADE],
   }));
 }
 

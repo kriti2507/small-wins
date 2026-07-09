@@ -1,5 +1,5 @@
 // Pace is stored as seconds per km.
-import type { Field } from "../types";
+import type { Field, Block } from "../types";
 
 // Accepts "8'35\"", "8:35", or a plain decimal number of minutes ("8.5").
 // Returns seconds, or NaN if invalid.
@@ -25,9 +25,9 @@ export function formatPace(sec: number | null | undefined): string {
 // Human-readable value for a field.
 export function formatValue(
   field: Field,
-  value: string | number | null | undefined,
+  value: string | number | null | undefined | Block[],
 ): string | number {
-  if (value == null || value === "") return "—";
+  if (value == null || value === "" || Array.isArray(value)) return "—";
   if (field.type === "pace") return formatPace(value as number);
   return value;
 }
