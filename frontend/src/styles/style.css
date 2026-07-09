@@ -689,28 +689,133 @@ a.back:hover {
   font-size: 1.2rem;
 }
 
-.post .post-text {
-  white-space: pre-wrap;
-  line-height: 1.8;
-  margin: 0 0 1.25rem;
-  max-width: 65ch;
-}
-
-/* Photos in a post read as prints glued into the journal. */
-.post .post-image {
+/* Article reading view */
+.article-hero {
   display: block;
-  max-width: min(100%, 640px);
+  width: 100%;
+  max-height: 340px;
+  object-fit: cover;
   border-radius: 2px;
   border: 10px solid var(--card);
-  border-bottom-width: 28px;
   box-shadow: 0 2px 6px rgba(var(--shadow-tint), 0.18),
     0 14px 28px -16px rgba(var(--shadow-tint), 0.3);
-  transform: rotate(-0.6deg);
-  margin: 1.5rem 0;
+  margin-bottom: 1.75rem;
 }
 
-.post .post-image:nth-of-type(2n) {
-  transform: rotate(0.7deg);
+/* Shared prose typography for the article view and the editor. */
+.prose {
+  max-width: 65ch;
+  margin: 1.25rem auto 0;
+  font-size: 1.06rem;
+  line-height: 1.8;
+}
+
+.prose h2,
+.prose h3 {
+  font-family: var(--font-display);
+  color: var(--ink-strong);
+  line-height: 1.25;
+  margin: 2rem 0 0.5rem;
+}
+
+.prose h2 {
+  font-size: 1.5rem;
+}
+
+.prose h3 {
+  font-size: 1.2rem;
+}
+
+.prose blockquote {
+  margin: 1.5rem 0;
+  padding: 0.25rem 0 0.25rem 1.1rem;
+  border-left: 3px solid var(--topic-color, var(--accent));
+  color: var(--ink-muted);
+  font-style: italic;
+}
+
+.prose a {
+  color: var(--topic-color, var(--accent));
+}
+
+.prose ul,
+.prose ol {
+  padding-left: 1.4rem;
+}
+
+/* Figures: photos as prints, with a handwritten caption underneath. */
+.prose figure {
+  margin: 2rem 0;
+}
+
+.prose figure img {
+  display: block;
+  width: 100%;
+  border-radius: 2px;
+  border: 10px solid var(--card);
+  box-shadow: 0 2px 6px rgba(var(--shadow-tint), 0.18),
+    0 14px 28px -16px rgba(var(--shadow-tint), 0.3);
+}
+
+.prose figure[data-width="wide"] {
+  width: min(88vw, 900px);
+  margin-left: 50%;
+  transform: translateX(-50%);
+}
+
+.prose figcaption {
+  text-align: center;
+  font-family: var(--font-hand);
+  font-size: 1.1rem;
+  color: var(--ink-muted);
+  margin-top: 0.6rem;
+  min-height: 1.4em; /* keeps an empty caption clickable in the editor */
+}
+
+/* Editor chrome */
+.post-toolbar {
+  position: sticky;
+  top: 0.5rem;
+  z-index: 5;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 0.35rem;
+  box-shadow: 0 2px 8px -2px rgba(var(--shadow-tint), 0.2);
+}
+
+.post-toolbar button {
+  border: 1px solid transparent;
+  background: none;
+  padding: 0.3rem 0.6rem;
+  border-radius: 6px;
+  cursor: pointer;
+  font-family: var(--font-body);
+  font-size: 0.95rem;
+  color: var(--ink);
+}
+
+.post-toolbar button:hover {
+  border-color: var(--border);
+}
+
+.post-toolbar button.on {
+  background: var(--topic-color, var(--accent));
+  color: var(--card);
+}
+
+.post-editor .ProseMirror {
+  min-height: 14rem;
+  outline: none;
+}
+
+.upload-error {
+  color: #a33f2e;
+  font-size: 0.95rem;
+  margin: 0;
 }
 
 /* Post editor */
@@ -718,49 +823,6 @@ a.back:hover {
   display: flex;
   flex-direction: column;
   gap: 0.75rem;
-}
-
-.post-editor .block {
-  display: flex;
-  gap: 0.5rem;
-  align-items: flex-start;
-}
-
-.block-controls {
-  display: flex;
-  flex-direction: column;
-  gap: 0.25rem;
-  flex: none;
-}
-
-.block-controls button {
-  padding: 0.2rem 0.5rem;
-  line-height: 1;
-}
-
-.block-text {
-  font: inherit;
-  flex: 1;
-  min-height: 5rem;
-  padding: 0.6rem 0.7rem;
-  background: var(--card);
-  border: 1px solid var(--border);
-  border-radius: 10px;
-  color: var(--ink);
-  line-height: 1.7;
-  resize: vertical;
-  transition: border-color 0.2s ease;
-}
-
-.block-text:focus {
-  border-color: var(--ink-faint);
-}
-
-.block-image {
-  max-width: 100%;
-  border-radius: 2px;
-  border: 6px solid var(--card);
-  box-shadow: 0 1px 4px rgba(var(--shadow-tint), 0.2);
 }
 
 .post-editor-actions {
@@ -772,21 +834,4 @@ a.back:hover {
 
 .post-editor-actions .spacer {
   flex: 1;
-}
-
-.add-photo {
-  display: inline-block;
-  border: 1px solid var(--border);
-  background: var(--card);
-  padding: 0.45rem 1rem;
-  border-radius: 999px;
-  cursor: pointer;
-  font-size: inherit;
-  transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease;
-}
-
-.add-photo:hover {
-  border-color: var(--ink-faint);
-  box-shadow: 0 2px 8px -2px rgba(var(--shadow-tint), 0.2);
-  transform: translateY(-1px);
 }
