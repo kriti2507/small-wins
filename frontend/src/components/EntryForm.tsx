@@ -1,7 +1,7 @@
 import { useState } from "react";
 import type { Topic } from "../types";
 import { parsePace } from "../lib/pace";
-import { addEntry } from "../api/client";
+import { addEntry, uploadImage } from "../api/client";
 
 interface Props {
   topic: Topic;
@@ -12,13 +12,28 @@ interface Props {
 // Add-entry form: one input per field (pace fields parsed to seconds on save).
 export default function EntryForm({ topic, onAdded, onCancel }: Props) {
   const [values, setValues] = useState<Record<string, string>>({});
+  const [file, setFile] = useState<File | null>(null);
+  const [preview, setPreview] = useState("");
+  const [error, setError] = useState("");
 
   function set(key: string, value: string) {
     setValues((v) => ({ ...v, [key]: value }));
   }
 
-  function handleSubmit(e: React.FormEvent) {
+  function handleFile(e: React.ChangeEvent<HTMLInputElement>) {
+    const f = e.target.files?.[0] ?? null;
+    setFile(f);
+    setPreview(f ? URL.createObjectURL(f) : "");
+  }
+
+  function clearFile() {
+    setFile(null);
+    setPreview("");
+  }
+
+  async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
+    setError("");
     const data: Record<string, string | number> = { date: values.date || "" };
     for (const f of topic.fields) {
       const raw = values[f.key] ?? "";
@@ -34,10 +49,18 @@ export default function EntryForm({ topic, onAdded, onCancel }: Props) {
       }
     }
 
-    addEntry(topic.slug, data).then(() => {
+    try {
+      if (file) {
+        const { url } = await uploadImage(file);
+        data.image = url;
+      }
+      await addEntry(topic.slug, data);
       setValues({});
+      clearFile();
       onAdded();
-    });
+    } catch (err) {
+      setError((err as Error).message || "Could not save entry.");
+    }
   }
 
   return (
@@ -71,6 +94,18 @@ export default function EntryForm({ topic, onAdded, onCancel }: Props) {
         ))}
       </div>
       <label>
+        Photo (optional)
+        <input type="file" accept="image/*" onChange={handleFile} />
+      </label>
+      {preview && (
+        <div className="photo-preview">
+          <img src={preview} alt="preview" />
+          <button type="button" onClick={clearFile}>
+            Remove
+          </button>
+        </div>
+      )}
+      <label>
         Date
         <input
           type="date"
@@ -80,6 +115,7 @@ export default function EntryForm({ topic, onAdded, onCancel }: Props) {
           onChange={(e) => set("date", e.target.value)}
         />
       </label>
+      {error && <p className="form-error">{error}</p>}
       <div className="toolbar">
         <button type="submit" className="primary">
           Save
