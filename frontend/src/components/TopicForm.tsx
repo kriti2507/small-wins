@@ -37,7 +37,7 @@ export default function TopicForm({ onCreated, onCancel }: Props) {
       .map((r) => ({ label: r.label.trim(), type: r.type, direction: r.direction }))
       .filter((f) => f.label);
 
-    addTopic({ name, color, fields })
+    addTopic({ name, color, layout: "photo-top", fields })
       .then(() => {
         setName("");
         setColor(PALETTE_ORDER[0]);

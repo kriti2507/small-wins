@@ -10,17 +10,21 @@ export interface Field {
   direction: Direction;
 }
 
+export type Layout = "photo-top" | "thumbnail";
+
 export interface Topic {
   slug: string;
   name: string;
   color: string; // palette id, e.g. "green"
+  layout: Layout;
   fields: Field[];
 }
 
 export interface Entry {
   id: number;
   date: string; // "YYYY-MM-DD"
-  [fieldKey: string]: string | number | null;
+  image?: string | null; // served path, e.g. "/api/uploads/ab12.jpg"
+  [fieldKey: string]: string | number | null | undefined;
 }
 
 export interface DateRange {

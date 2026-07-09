@@ -15,6 +15,7 @@ export function getTopics(): Promise<Topic[]> {
 export function addTopic(payload: {
   name: string;
   color: string | null;
+  layout: string;
   fields: { label: string; type: string; direction: string }[];
 }): Promise<Topic> {
   return fetch("/api/topics", {
@@ -37,4 +38,20 @@ export function addEntry(
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload),
   }).then((r) => json<Entry>(r));
+}
+
+export function setTopicLayout(slug: string, layout: string): Promise<Topic> {
+  return fetch(`/api/topics/${slug}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ layout }),
+  }).then((r) => json<Topic>(r));
+}
+
+export function uploadImage(file: File): Promise<{ url: string }> {
+  const form = new FormData();
+  form.append("file", file);
+  return fetch("/api/uploads", { method: "POST", body: form }).then((r) =>
+    json<{ url: string }>(r),
+  );
 }

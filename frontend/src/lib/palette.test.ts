@@ -8,7 +8,7 @@ import {
 } from "./palette";
 import type { Topic } from "../types";
 
-const topic = (color: string): Topic => ({ slug: "t", name: "T", color, fields: [] });
+const topic = (color: string): Topic => ({ slug: "t", name: "T", color, layout: "thumbnail", fields: [] });
 
 describe("rampFor", () => {
   test("uses the topic's saved color when valid", () => {

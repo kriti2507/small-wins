@@ -6,6 +6,7 @@ const topic = (fields: Topic["fields"]): Topic => ({
   slug: "t",
   name: "T",
   color: "green",
+  layout: "thumbnail",
   fields,
 });
 
