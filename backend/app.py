@@ -1,14 +1,19 @@
 import json
 import os
 import re
-from flask import Flask, jsonify, request
+import uuid
+from flask import Flask, jsonify, request, send_from_directory
+from werkzeug.utils import secure_filename
 
 # API only: the React frontend is served separately (Vite in dev, a static
 # host in prod). This app exposes just the /api/* contract.
 app = Flask(__name__, static_folder=None)
+app.config["MAX_CONTENT_LENGTH"] = 5 * 1024 * 1024  # 5 MB per upload
 
 DATA_DIR = os.path.join(os.path.dirname(__file__), "data")
 TOPICS_FILE = os.path.join(DATA_DIR, "topics.json")
+UPLOADS_DIR = os.path.join(DATA_DIR, "uploads")
+ALLOWED_EXT = {"png", "jpg", "jpeg", "gif", "webp"}
 
 
 # Color ids the frontend palette offers; the first is the default.
@@ -139,6 +144,27 @@ def update_topic(slug):
     return jsonify(topic)
 
 
+# --- Uploads API -----------------------------------------------------------
+
+@app.route("/api/uploads", methods=["POST"])
+def upload_file():
+    file = request.files.get("file")
+    if not file or not file.filename:
+        return jsonify({"error": "No file provided."}), 400
+    ext = file.filename.rsplit(".", 1)[-1].lower() if "." in file.filename else ""
+    if ext not in ALLOWED_EXT:
+        return jsonify({"error": "Unsupported file type."}), 400
+    os.makedirs(UPLOADS_DIR, exist_ok=True)
+    name = secure_filename(f"{uuid.uuid4().hex}.{ext}")
+    file.save(os.path.join(UPLOADS_DIR, name))
+    return jsonify({"url": f"/api/uploads/{name}"}), 201
+
+
+@app.route("/api/uploads/<path:filename>", methods=["GET"])
+def serve_upload(filename):
+    return send_from_directory(UPLOADS_DIR, filename)
+
+
 # --- Entries API -----------------------------------------------------------
 
 @app.route("/api/topics/<slug>/entries", methods=["GET"])
@@ -159,6 +185,7 @@ def add_entry(slug):
     entry = {
         "id": (max((e["id"] for e in entries), default=0) + 1),
         "date": data.get("date", ""),
+        "image": data.get("image") or None,
     }
     for field in topic["fields"]:
         key = field["key"]
