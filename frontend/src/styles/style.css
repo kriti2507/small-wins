@@ -758,6 +758,11 @@ a.back:hover {
     0 14px 28px -16px rgba(var(--shadow-tint), 0.3);
 }
 
+.prose figure.ProseMirror-selectednode img {
+  outline: 3px solid var(--topic-color, var(--accent));
+  outline-offset: 2px;
+}
+
 .prose figure[data-width="wide"] {
   width: min(88vw, 900px);
   margin-left: 50%;

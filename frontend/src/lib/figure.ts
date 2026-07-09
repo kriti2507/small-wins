@@ -1,5 +1,5 @@
 import { Node } from "@tiptap/core";
-import { TextSelection } from "@tiptap/pm/state";
+import { NodeSelection, Plugin, TextSelection } from "@tiptap/pm/state";
 
 export type FigureWidth = "normal" | "wide";
 
@@ -86,5 +86,32 @@ export const Figure = Node.create({
         });
       },
     };
+  },
+
+  addProseMirrorPlugins() {
+    const name = this.name;
+    return [
+      // Clicking the photo selects the whole figure (ProseMirror only does
+      // this automatically for atom nodes), enabling the width toggle and
+      // Backspace deletion.
+      new Plugin({
+        props: {
+          handleClickOn(view, _pos, node, nodePos, event) {
+            if (
+              node.type.name === name &&
+              (event.target as HTMLElement).tagName === "IMG"
+            ) {
+              view.dispatch(
+                view.state.tr.setSelection(
+                  NodeSelection.create(view.state.doc, nodePos),
+                ),
+              );
+              return true;
+            }
+            return false;
+          },
+        },
+      }),
+    ];
   },
 });
