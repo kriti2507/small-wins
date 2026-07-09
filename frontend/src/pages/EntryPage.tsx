@@ -48,7 +48,7 @@ export default function EntryPage() {
   }, [slug, entryId]);
 
   function startEditing() {
-    setDraft(entry?.body ?? []);
+    setDraft(Array.isArray(entry?.body) ? entry.body : []);
     setEditing(true);
   }
 
