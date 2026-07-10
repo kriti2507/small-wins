@@ -125,3 +125,14 @@ def test_logout_clears_session(auth_client):
     res = auth_client.post("/api/auth/logout")
     assert res.status_code == 200
     assert auth_client.get("/api/auth/me").get_json() == {"is_admin": False}
+
+
+def test_login_rejects_malformed_payloads(auth_client):
+    bad = [
+        ("[1, 2]", "application/json"),          # JSON but not an object
+        ('{"password": 123}', "application/json"),  # non-string password
+        ("not json", "text/plain"),               # not JSON at all
+    ]
+    for body, ctype in bad:
+        res = auth_client.post("/api/auth/login", data=body, content_type=ctype)
+        assert res.status_code == 401, f"{body!r} -> {res.status_code}"

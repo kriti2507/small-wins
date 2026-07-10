@@ -21,6 +21,8 @@ app.config["MAX_CONTENT_LENGTH"] = 5 * 1024 * 1024  # 5 MB per upload
 #   SECRET_KEY           random string that signs the session cookie
 ADMIN_PASSWORD_HASH = os.environ.get("ADMIN_PASSWORD_HASH")
 app.secret_key = os.environ.get("SECRET_KEY", "dev-only-not-secret")
+if ADMIN_PASSWORD_HASH and app.secret_key == "dev-only-not-secret":
+    raise RuntimeError("SECRET_KEY must be set when ADMIN_PASSWORD_HASH is configured")
 app.permanent_session_lifetime = timedelta(days=30)
 app.config["SESSION_COOKIE_HTTPONLY"] = True
 app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
@@ -66,7 +68,10 @@ def auth_login():
     if too_many_attempts(ip):
         return jsonify({"error": "Too many attempts. Try again in a minute."}), 429
 
-    password = (request.get_json(force=True).get("password") or "")
+    data = request.get_json(silent=True)
+    password = data.get("password") if isinstance(data, dict) else None
+    if not isinstance(password, str):
+        password = ""
     if not check_password_hash(ADMIN_PASSWORD_HASH, password):
         LOGIN_ATTEMPTS.setdefault(ip, []).append(time.time())
         return jsonify({"error": "Wrong password."}), 401
