@@ -1,6 +1,10 @@
 import pytest
+from werkzeug.security import generate_password_hash
 
 import app as app_module
+
+TEST_PASSWORD = "correct horse"
+TEST_HASH = generate_password_hash(TEST_PASSWORD, method="pbkdf2:sha256")
 
 
 @pytest.fixture()
@@ -10,8 +14,25 @@ def client(tmp_path, monkeypatch):
     monkeypatch.setattr(app_module, "DATA_DIR", str(tmp_path))
     monkeypatch.setattr(app_module, "TOPICS_FILE", str(tmp_path / "topics.json"))
     monkeypatch.setattr(app_module, "UPLOADS_DIR", str(tmp_path / "uploads"))
+    # Dev mode: no password configured, every request is admin.
+    # raising=False lets this fixture run before the attributes exist (red
+    # phase of TDD) without breaking the pre-existing tests.
+    monkeypatch.setattr(app_module, "ADMIN_PASSWORD_HASH", None, raising=False)
+    monkeypatch.setattr(app_module, "LOGIN_ATTEMPTS", {}, raising=False)
     app_module.app.config["TESTING"] = True
+    app_module.app.config["SESSION_COOKIE_SECURE"] = False
     return app_module.app.test_client()
+
+
+@pytest.fixture()
+def auth_client(client, monkeypatch):
+    # Same client, but with an admin password configured (production mode).
+    monkeypatch.setattr(app_module, "ADMIN_PASSWORD_HASH", TEST_HASH)
+    return client
+
+
+def log_in(c, password=TEST_PASSWORD):
+    return c.post("/api/auth/login", json={"password": password})
 
 
 DOC = {
@@ -72,3 +93,35 @@ def test_patch_rejects_oversized_body(client):
     }
     res = client.patch(f"/api/topics/runs/entries/{entry_id}", json={"body": big})
     assert res.status_code == 400
+
+
+# --- Auth -------------------------------------------------------------------
+
+def test_me_reports_admin_in_dev_mode(client):
+    res = client.get("/api/auth/me")
+    assert res.status_code == 200
+    assert res.get_json() == {"is_admin": True}
+
+
+def test_me_reports_visitor_when_password_configured(auth_client):
+    assert auth_client.get("/api/auth/me").get_json() == {"is_admin": False}
+
+
+def test_login_with_correct_password(auth_client):
+    res = log_in(auth_client)
+    assert res.status_code == 200
+    assert res.get_json() == {"is_admin": True}
+    assert auth_client.get("/api/auth/me").get_json() == {"is_admin": True}
+
+
+def test_login_with_wrong_password(auth_client):
+    res = log_in(auth_client, "nope")
+    assert res.status_code == 401
+    assert auth_client.get("/api/auth/me").get_json() == {"is_admin": False}
+
+
+def test_logout_clears_session(auth_client):
+    log_in(auth_client)
+    res = auth_client.post("/api/auth/logout")
+    assert res.status_code == 200
+    assert auth_client.get("/api/auth/me").get_json() == {"is_admin": False}

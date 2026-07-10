@@ -1,14 +1,86 @@
 import json
 import os
 import re
+import time
 import uuid
-from flask import Flask, jsonify, request, send_from_directory
+from datetime import timedelta
+from functools import wraps
+from flask import Flask, jsonify, request, send_from_directory, session
+from werkzeug.security import check_password_hash
 from werkzeug.utils import secure_filename
 
 # API only: the React frontend is served separately (Vite in dev, a static
 # host in prod). This app exposes just the /api/* contract.
 app = Flask(__name__, static_folder=None)
 app.config["MAX_CONTENT_LENGTH"] = 5 * 1024 * 1024  # 5 MB per upload
+
+# --- Auth ------------------------------------------------------------------
+# Single-admin auth. If ADMIN_PASSWORD_HASH is unset (local dev), every
+# request is treated as admin. In production, set:
+#   ADMIN_PASSWORD_HASH  werkzeug hash of the admin password
+#   SECRET_KEY           random string that signs the session cookie
+ADMIN_PASSWORD_HASH = os.environ.get("ADMIN_PASSWORD_HASH")
+app.secret_key = os.environ.get("SECRET_KEY", "dev-only-not-secret")
+app.permanent_session_lifetime = timedelta(days=30)
+app.config["SESSION_COOKIE_HTTPONLY"] = True
+app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
+app.config["SESSION_COOKIE_SECURE"] = bool(ADMIN_PASSWORD_HASH)
+
+# Failed-login timestamps per IP, pruned to the last minute.
+LOGIN_ATTEMPTS = {}
+MAX_LOGIN_ATTEMPTS = 5
+LOGIN_WINDOW_SECONDS = 60
+
+
+def is_admin():
+    return ADMIN_PASSWORD_HASH is None or bool(session.get("is_admin"))
+
+
+def admin_required(fn):
+    @wraps(fn)
+    def wrapper(*args, **kwargs):
+        if not is_admin():
+            return jsonify({"error": "Only admin can make changes."}), 403
+        return fn(*args, **kwargs)
+    return wrapper
+
+
+def too_many_attempts(ip):
+    now = time.time()
+    recent = [t for t in LOGIN_ATTEMPTS.get(ip, []) if now - t < LOGIN_WINDOW_SECONDS]
+    LOGIN_ATTEMPTS[ip] = recent
+    return len(recent) >= MAX_LOGIN_ATTEMPTS
+
+
+@app.route("/api/auth/me", methods=["GET"])
+def auth_me():
+    return jsonify({"is_admin": is_admin()})
+
+
+@app.route("/api/auth/login", methods=["POST"])
+def auth_login():
+    if ADMIN_PASSWORD_HASH is None:
+        return jsonify({"is_admin": True})  # dev mode: nothing to check
+
+    ip = request.remote_addr or "unknown"
+    if too_many_attempts(ip):
+        return jsonify({"error": "Too many attempts. Try again in a minute."}), 429
+
+    password = (request.get_json(force=True).get("password") or "")
+    if not check_password_hash(ADMIN_PASSWORD_HASH, password):
+        LOGIN_ATTEMPTS.setdefault(ip, []).append(time.time())
+        return jsonify({"error": "Wrong password."}), 401
+
+    session.permanent = True
+    session["is_admin"] = True
+    return jsonify({"is_admin": True})
+
+
+@app.route("/api/auth/logout", methods=["POST"])
+def auth_logout():
+    session.clear()
+    return jsonify({"is_admin": False})
+
 
 DATA_DIR = os.path.join(os.path.dirname(__file__), "data")
 TOPICS_FILE = os.path.join(DATA_DIR, "topics.json")
