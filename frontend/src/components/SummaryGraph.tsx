@@ -56,6 +56,7 @@ export default function SummaryGraph({ topic, entries, colorIndex }: Props) {
   const reduced = prefersReducedMotion();
   const [visible, setVisible] = useState(reduced ? count : 0);
   const pausedRef = useRef(false);
+  const nRef = useRef(0);
 
   useEffect(() => {
     if (reduced || count === 0) {
@@ -63,20 +64,20 @@ export default function SummaryGraph({ topic, entries, colorIndex }: Props) {
       return;
     }
     setVisible(0);
-    let n = 0;
+    nRef.current = 0;
     let timer = window.setTimeout(tick, delay);
     function tick() {
       if (pausedRef.current) {
         timer = window.setTimeout(tick, 120);
         return;
       }
-      if (n < count) {
-        n += 1;
-        setVisible(n);
+      if (nRef.current < count) {
+        nRef.current += 1;
+        setVisible(nRef.current);
         timer = window.setTimeout(tick, delay);
       } else {
         timer = window.setTimeout(() => {
-          n = 0;
+          nRef.current = 0;
           setVisible(0);
           timer = window.setTimeout(tick, RESET_MS);
         }, HOLD_MS);
@@ -98,6 +99,7 @@ export default function SummaryGraph({ topic, entries, colorIndex }: Props) {
         if (!reduced) setVisible(count);
       }}
       onMouseLeave={() => {
+        nRef.current = count;
         pausedRef.current = false;
       }}
     >

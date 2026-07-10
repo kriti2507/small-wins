@@ -262,6 +262,12 @@ h3 {
   transform: scale(1.25);
 }
 
+@media (prefers-reduced-motion: reduce) {
+  .graph-box {
+    transition: none;
+  }
+}
+
 .empty {
   color: var(--ink-muted);
   font-family: var(--font-hand);
