@@ -49,6 +49,8 @@ export default function LoginPage() {
       <form className="login-form" onSubmit={submit}>
         <input
           type="password"
+          name="password"
+          autoComplete="current-password"
           value={password}
           onChange={(e) => setPassword(e.target.value)}
           placeholder="Password"

@@ -943,6 +943,27 @@ a.back:hover {
 .login-error {
   flex-basis: 100%;
   color: #a4442d;
-  font-size: 14px;
+  font-size: 0.85rem;
   margin: 0;
+}
+
+/* Discreet admin logout at the bottom of the home page */
+.admin-bar {
+  margin-top: 40px;
+  text-align: center;
+}
+
+.admin-bar .linklike {
+  background: none;
+  border: none;
+  padding: 0;
+  font-size: 0.85rem;
+  color: var(--ink);
+  opacity: 0.5;
+  cursor: pointer;
+  text-decoration: underline;
+}
+
+.admin-bar .linklike:hover {
+  opacity: 0.8;
 }

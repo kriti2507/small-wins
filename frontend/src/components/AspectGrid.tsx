@@ -2,6 +2,7 @@ import { Link } from "react-router-dom";
 import type { Topic, Entry } from "../types";
 import SummaryGraph from "./SummaryGraph";
 import { buttonColorFor } from "../lib/palette";
+import AdminGate from "./AdminGate";
 
 interface AspectData {
   topic: Topic;
@@ -36,9 +37,11 @@ export default function AspectGrid({ topicsData, onAddMore }: Props) {
           </div>
         );
       })}
-      <div className="aspect-box add-more" onClick={onAddMore}>
-        + Add more
-      </div>
+      <AdminGate className="gate-block">
+        <div className="aspect-box add-more" onClick={onAddMore}>
+          + Add more
+        </div>
+      </AdminGate>
     </div>
   );
 }

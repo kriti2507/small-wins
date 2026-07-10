@@ -25,12 +25,16 @@ export default function AdminGate({ children, className }: Props) {
   return (
     <div
       className={"admin-gate" + (className ? ` ${className}` : "")}
-      aria-disabled="true"
       onMouseEnter={track}
       onMouseMove={track}
       onMouseLeave={() => setPos(null)}
     >
-      <div className="admin-gate-content">{children}</div>
+      <div
+        className="admin-gate-content"
+        ref={(el) => el?.setAttribute("inert", "")}
+      >
+        {children}
+      </div>
       {pos &&
         createPortal(
           <div className="cell-tooltip" style={{ left: pos.x, top: pos.y }}>

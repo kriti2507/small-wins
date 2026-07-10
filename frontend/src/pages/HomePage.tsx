@@ -7,6 +7,7 @@ import Capsule, { type CapsuleTopicData } from "../components/Capsule";
 import AspectGrid from "../components/AspectGrid";
 import TopicForm from "../components/TopicForm";
 import RangeControls, { type Preset } from "../components/RangeControls";
+import { useAuth } from "../auth";
 
 const PRESETS: Preset[] = [
   { key: "7", label: "Last 7 days" },
@@ -30,6 +31,7 @@ function presetRange(preset: string): DateRange {
 }
 
 export default function HomePage() {
+  const { isAdmin, logout } = useAuth();
   const [topicsData, setTopicsData] = useState<CapsuleTopicData[]>([]);
   const [showForm, setShowForm] = useState(false);
   const [preset, setPreset] = useState("7");
@@ -102,6 +104,14 @@ export default function HomePage() {
           }}
           onCancel={() => setShowForm(false)}
         />
+      )}
+
+      {isAdmin && (
+        <footer className="admin-bar">
+          <button type="button" className="linklike" onClick={() => logout()}>
+            Log out
+          </button>
+        </footer>
       )}
     </>
   );
