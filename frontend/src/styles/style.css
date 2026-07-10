@@ -238,23 +238,27 @@ h3 {
   box-shadow: none;
 }
 
-/* Summary graph */
-.graph-grid {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 3px;
-  margin-bottom: 0.75rem;
+/* Summary graph — square spiral that draws itself and loops */
+.spiral-stage {
+  position: relative;
+  margin: 0 auto 0.75rem;
 }
 
 .graph-box {
-  width: 14px;
-  height: 14px;
+  position: absolute;
   border-radius: 4px;
   cursor: pointer;
-  transition: transform 0.15s ease;
+  opacity: 0;
+  transform: scale(0.2);
+  transition: opacity 0.28s ease, transform 0.28s ease;
 }
 
-.graph-box:hover {
+.graph-box.on {
+  opacity: 1;
+  transform: scale(1);
+}
+
+.graph-box.on:hover {
   transform: scale(1.25);
 }
 
