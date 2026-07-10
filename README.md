@@ -56,3 +56,24 @@ the backend by proxying `/api` to the Flask app (or set an API base URL).
 cd frontend && npm run build
 npm run preview              # locally preview the built frontend
 ```
+
+## Admin access
+
+Anyone can view the site; changing anything requires the admin session.
+The backend reads two environment variables:
+
+- `ADMIN_PASSWORD_HASH` — hash of the admin password. Generate it with:
+
+  ```sh
+  python -c "from werkzeug.security import generate_password_hash; print(generate_password_hash(input('Password: ')))"
+  ```
+
+- `SECRET_KEY` — a long random string used to sign the session cookie
+  (e.g. `python -c "import secrets; print(secrets.token_hex(32))"`).
+
+Set both wherever the Flask app runs in production. Log in at `/login`
+(the page is not linked anywhere); the session lasts 30 days per browser.
+
+**If neither variable is set (local dev), every request is treated as
+admin** — no login needed while developing. Never deploy without
+`ADMIN_PASSWORD_HASH`, or the site is world-writable.
