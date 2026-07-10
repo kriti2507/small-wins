@@ -113,7 +113,7 @@ export default function SummaryGraph({ topic, entries, colorIndex }: Props) {
         return (
           <HoverCell
             key={entry.id}
-            className={on ? "graph-box on" : "graph-box"}
+            className={on ? "spiral-box on" : "spiral-box"}
             style={{
               width: cell,
               height: cell,

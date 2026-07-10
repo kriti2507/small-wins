@@ -244,7 +244,24 @@ h3 {
   margin: 0 auto 0.75rem;
 }
 
+/* Shared, always-visible box: the Time Capsule calendar (Capsule.tsx) and the
+   base look for spiral cells. Keep this visible — do not add opacity/position
+   animation here or the capsule boxes disappear. */
 .graph-box {
+  width: 14px;
+  height: 14px;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: transform 0.15s ease;
+}
+
+.graph-box:hover {
+  transform: scale(1.25);
+}
+
+/* Spiral cells: absolutely positioned along the spiral, sized inline, and
+   revealed one at a time (opacity/scale) for the looping draw-in. */
+.spiral-box {
   position: absolute;
   border-radius: 4px;
   cursor: pointer;
@@ -253,17 +270,17 @@ h3 {
   transition: opacity 0.28s ease, transform 0.28s ease;
 }
 
-.graph-box.on {
+.spiral-box.on {
   opacity: 1;
   transform: scale(1);
 }
 
-.graph-box.on:hover {
+.spiral-box.on:hover {
   transform: scale(1.25);
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .graph-box {
+  .spiral-box {
     transition: none;
   }
 }
