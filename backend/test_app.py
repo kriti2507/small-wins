@@ -171,3 +171,12 @@ def test_writes_locked_again_after_logout(auth_client):
 def test_reads_stay_public(auth_client):
     assert auth_client.get("/api/topics").status_code == 200
     assert auth_client.get("/api/topics/runs/entries").status_code == 200
+
+
+def test_login_rate_limited_after_five_failures(auth_client):
+    for _ in range(5):
+        assert log_in(auth_client, "wrong").status_code == 401
+    res = log_in(auth_client, "wrong")
+    assert res.status_code == 429
+    # Even the correct password is refused while rate-limited.
+    assert log_in(auth_client).status_code == 429
