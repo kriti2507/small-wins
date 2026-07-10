@@ -71,3 +71,25 @@ export function uploadImage(file: File): Promise<{ url: string }> {
     json<{ url: string }>(r),
   );
 }
+
+export interface AuthState {
+  is_admin: boolean;
+}
+
+export function getMe(): Promise<AuthState> {
+  return fetch("/api/auth/me").then((r) => json<AuthState>(r));
+}
+
+export function login(password: string): Promise<AuthState> {
+  return fetch("/api/auth/login", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ password }),
+  }).then((r) => json<AuthState>(r));
+}
+
+export function logout(): Promise<AuthState> {
+  return fetch("/api/auth/logout", { method: "POST" }).then((r) =>
+    json<AuthState>(r),
+  );
+}
