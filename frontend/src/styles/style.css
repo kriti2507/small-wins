@@ -891,3 +891,26 @@ a.back:hover {
 .post-editor-actions .spacer {
   flex: 1;
 }
+
+/* Edit affordances seen by visitors: inert, dimmed, tooltip on hover
+   (AdminGate). pointer-events: none on the content lets the wrapper own
+   hover while making buttons unclickable. */
+.admin-gate {
+  display: inline-block;
+  cursor: not-allowed;
+}
+
+.admin-gate-content {
+  pointer-events: none;
+  opacity: 0.55;
+}
+
+/* Gated grid tiles (e.g. "+ Add more") must fill their cell. */
+.admin-gate.gate-block {
+  display: block;
+}
+
+.admin-gate.gate-block .admin-gate-content,
+.admin-gate.gate-block .admin-gate-content > * {
+  height: 100%;
+}
