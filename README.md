@@ -68,6 +68,10 @@ The backend reads two environment variables:
   python -c "from werkzeug.security import generate_password_hash; print(generate_password_hash(input('Password: ')))"
   ```
 
+  (If Python complains about missing `scrypt` — e.g. macOS system
+  Python 3.9 — add `, method='pbkdf2'` to the
+  `generate_password_hash` call; the resulting hash works the same.)
+
 - `SECRET_KEY` — a long random string used to sign the session cookie
   (e.g. `python -c "import secrets; print(secrets.token_hex(32))"`).
 
