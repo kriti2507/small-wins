@@ -183,16 +183,37 @@ h3 {
 }
 
 .aspect-box {
+  display: flex;
+  flex-direction: column;
   background: var(--card);
   border: 1px solid var(--border);
   border-radius: 14px;
   padding: 1.4rem 1.5rem;
   box-shadow: 0 2px 10px -4px rgba(var(--shadow-tint), 0.12);
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.aspect-box:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 20px -8px rgba(var(--shadow-tint), 0.22);
 }
 
 .aspect-box h2 {
-  margin: 0 0 0.75rem;
+  margin: 0 0 1rem;
   font-size: 1.2rem;
+}
+
+.aspect-box .graph {
+  margin-bottom: 1.4rem;
+}
+
+/* "Learn more" is a router Link (<a>), so strip the default underline and
+   pin it to the bottom so every card's button lines up. */
+.aspect-box .btn.primary {
+  align-self: flex-start;
+  margin-top: auto;
+  text-decoration: none;
+  font-weight: 500;
 }
 
 .add-more {
@@ -214,6 +235,7 @@ h3 {
   border-color: var(--ink-faint);
   color: var(--accent);
   background: var(--card);
+  box-shadow: none;
 }
 
 /* Summary graph */
