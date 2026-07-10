@@ -12,7 +12,6 @@ type Doodle = {
   delayX: number; // negative delays scatter starting positions
   delayY: number;
   spin: number; // seconds per full rotation
-  accent?: boolean;
   filled?: boolean; // solid stamp; line doodles stay stroked
 };
 
@@ -27,7 +26,7 @@ const DOODLES: Doodle[] = [
     path: (
       <path d="M50 10C53 35 65 47 90 50 65 53 53 65 50 90 47 65 35 53 10 50 35 47 47 35 50 10Z" />
     ),
-    size: 44, durX: 37, durY: 29, delayX: -25, delayY: -8, spin: 80, accent: true, filled: true,
+    size: 44, durX: 37, durY: 29, delayX: -25, delayY: -8, spin: 80, filled: true,
   },
   {
     // Loose circle; filling auto-closes the small gap into a solid blob
@@ -48,7 +47,7 @@ const DOODLES: Doodle[] = [
     path: (
       <path d="M50 85C20 60 10 40 22 27 32 17 46 22 50 34 54 22 68 17 78 27 90 40 80 60 50 85Z" />
     ),
-    size: 48, durX: 61, durY: 38, delayX: -50, delayY: -22, spin: 110, accent: true, filled: true,
+    size: 48, durX: 61, durY: 38, delayX: -50, delayY: -22, spin: 110, filled: true,
   },
   {
     // Asterisk
@@ -76,7 +75,7 @@ export default function BackgroundDoodles() {
       {DOODLES.map((d, i) => (
         <div
           key={i}
-          className={d.accent ? "doodle-x accent" : "doodle-x"}
+          className={d.filled ? "doodle-x filled" : "doodle-x"}
           style={
             {
               "--size": `${d.size}px`,

@@ -1008,9 +1008,12 @@ a.back:hover {
   animation: doodle-spin var(--spin, 90s) linear infinite;
 }
 
-.doodle-x.accent svg {
-  color: var(--accent);
-  opacity: 0.06;
+/* Solid stamps take the same tint as the capsule's preset buttons: the
+   topic color on topic pages, the accent everywhere else. Low opacity
+   over the paper is what makes the button color read "mild". */
+.doodle-x.filled svg {
+  color: var(--topic-color, var(--accent));
+  opacity: 0.16;
 }
 
 @keyframes doodle-x {
