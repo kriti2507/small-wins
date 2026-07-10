@@ -78,6 +78,10 @@ The backend reads two environment variables:
 Set both wherever the Flask app runs in production. Log in at `/login`
 (the page is not linked anywhere); the session lasts 30 days per browser.
 
+In production, run the backend with a real WSGI server (e.g. gunicorn)
+rather than `python app.py`, and set `TRUST_PROXY=1` if it sits behind a
+reverse proxy so the login rate limit sees real client IPs.
+
 **If neither variable is set (local dev), every request is treated as
 admin** — no login needed while developing. Never deploy without
 `ADMIN_PASSWORD_HASH`, or the site is world-writable.

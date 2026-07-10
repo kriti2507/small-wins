@@ -28,6 +28,13 @@ app.config["SESSION_COOKIE_HTTPONLY"] = True
 app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
 app.config["SESSION_COOKIE_SECURE"] = bool(ADMIN_PASSWORD_HASH)
 
+# Behind a reverse proxy (the usual production setup), trust X-Forwarded-For
+# so the login rate limit sees real client IPs, not the proxy's.
+if os.environ.get("TRUST_PROXY"):
+    from werkzeug.middleware.proxy_fix import ProxyFix
+
+    app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1)
+
 # Failed-login timestamps per IP, pruned to the last minute.
 LOGIN_ATTEMPTS = {}
 MAX_LOGIN_ATTEMPTS = 5
@@ -330,4 +337,5 @@ def update_entry(slug, entry_id):
 
 
 if __name__ == "__main__":
-    app.run(debug=True, port=5000)
+    # Debugger only in dev mode; production should use a real WSGI server.
+    app.run(debug=ADMIN_PASSWORD_HASH is None, port=5000)
