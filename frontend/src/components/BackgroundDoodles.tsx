@@ -13,27 +13,28 @@ type Doodle = {
   delayY: number;
   spin: number; // seconds per full rotation
   accent?: boolean;
+  filled?: boolean; // solid stamp; line doodles stay stroked
 };
 
 const DOODLES: Doodle[] = [
   {
     // Five-point star
     path: <path d="M50 8 61 38 93 39 67 58 76 90 50 71 24 90 33 58 7 39 39 38Z" />,
-    size: 64, durX: 53, durY: 41, delayX: -12, delayY: -30, spin: 120,
+    size: 64, durX: 53, durY: 41, delayX: -12, delayY: -30, spin: 120, filled: true,
   },
   {
     // Four-point sparkle
     path: (
       <path d="M50 10C53 35 65 47 90 50 65 53 53 65 50 90 47 65 35 53 10 50 35 47 47 35 50 10Z" />
     ),
-    size: 44, durX: 37, durY: 29, delayX: -25, delayY: -8, spin: 80, accent: true,
+    size: 44, durX: 37, durY: 29, delayX: -25, delayY: -8, spin: 80, accent: true, filled: true,
   },
   {
-    // Loose, not-quite-closed circle
+    // Loose circle; filling auto-closes the small gap into a solid blob
     path: (
       <path d="M85 45C88 20 65 8 45 12 20 17 8 40 14 62 20 84 45 94 66 86 80 81 87 68 86 54" />
     ),
-    size: 90, durX: 67, durY: 49, delayX: -40, delayY: -15, spin: 160,
+    size: 90, durX: 67, durY: 49, delayX: -40, delayY: -15, spin: 160, filled: true,
   },
   {
     // Squiggle
@@ -47,7 +48,7 @@ const DOODLES: Doodle[] = [
     path: (
       <path d="M50 85C20 60 10 40 22 27 32 17 46 22 50 34 54 22 68 17 78 27 90 40 80 60 50 85Z" />
     ),
-    size: 48, durX: 61, durY: 38, delayX: -50, delayY: -22, spin: 110, accent: true,
+    size: 48, durX: 61, durY: 38, delayX: -50, delayY: -22, spin: 110, accent: true, filled: true,
   },
   {
     // Asterisk
@@ -90,9 +91,9 @@ export default function BackgroundDoodles() {
           <div className="doodle-y">
             <svg
               viewBox="0 0 100 100"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth={5}
+              fill={d.filled ? "currentColor" : "none"}
+              stroke={d.filled ? "none" : "currentColor"}
+              strokeWidth={d.filled ? undefined : 7}
               strokeLinecap="round"
               strokeLinejoin="round"
             >
