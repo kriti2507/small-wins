@@ -8,3 +8,5 @@ backend/data
 frontend/node_modules/
 frontend/dist/
 skills-lock.json
+.claude
+frontend/tsconfig.tsbuildinfo

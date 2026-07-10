@@ -2,6 +2,7 @@ import type { Topic, Entry } from "../types";
 import { scoreEntries } from "../lib/scoring";
 import { rampFor, scoreToColor } from "../lib/palette";
 import { formatValue } from "../lib/pace";
+import HoverCell from "./HoverCell";
 
 interface Props {
   topic: Topic;
@@ -27,11 +28,11 @@ export default function SummaryGraph({ topic, entries, colorIndex }: Props) {
           lines.push(`${f.label}: ${formatValue(f, entry[f.key])}`);
         });
         return (
-          <div
+          <HoverCell
             key={entry.id}
             className="graph-box"
             style={{ backgroundColor: scoreToColor(scores[i], palette) }}
-            title={lines.join("\n")}
+            lines={lines}
           />
         );
       })}

@@ -8,6 +8,7 @@ import {
   formatCellLabel,
   WEEKDAYS,
 } from "../lib/dates";
+import HoverCell from "./HoverCell";
 
 // Per-topic data the capsule renders. scoreById maps entry.id -> score,
 // computed over the topic's full entry set so a box's shade matches its
@@ -78,13 +79,13 @@ export default function Capsule({ topicsData, range }: Props) {
                     lines.push(`${f.label}: ${formatValue(f, entry[f.key])}`);
                   });
                   return (
-                    <div
+                    <HoverCell
                       key={i}
                       className="graph-box"
                       style={{
                         backgroundColor: scoreToColor(score == null ? 0.5 : score, palette),
                       }}
-                      title={lines.join("\n")}
+                      lines={lines}
                     />
                   );
                 })}

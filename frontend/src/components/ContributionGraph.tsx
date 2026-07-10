@@ -3,6 +3,7 @@ import { scoreEntries } from "../lib/scoring";
 import { rampFor, scoreToColor } from "../lib/palette";
 import { formatValue } from "../lib/pace";
 import { enumerateDays, weekdayIndex, addDays, MONTHS } from "../lib/dates";
+import HoverCell from "./HoverCell";
 
 interface Props {
   topic: Topic;
@@ -82,17 +83,19 @@ export default function ContributionGraph({ topic, entries, colorIndex, range }:
               );
             });
             return (
-              <div
+              <HoverCell
                 key={day}
                 className="contrib-cell"
                 style={{
                   backgroundColor: scoreToColor(bucket.sum / bucket.entries.length, palette),
                 }}
-                title={lines.join("\n")}
+                lines={lines}
               />
             );
           }
-          return <div key={day} className="contrib-cell empty-day" title={day} />;
+          return (
+            <HoverCell key={day} className="contrib-cell empty-day" lines={[day]} />
+          );
         })}
       </div>
     </>

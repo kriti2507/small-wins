@@ -272,6 +272,33 @@ h3 {
   height: 13px;
   border-radius: 3px;
   background: #efe8da;
+  cursor: pointer;
+  transition: transform 0.15s ease;
+}
+
+.contrib-cell:hover {
+  transform: scale(1.35);
+}
+
+.contrib-cell.pad:hover {
+  transform: none;
+}
+
+/* Instant custom tooltip shared by every graph cell (see HoverCell). */
+.cell-tooltip {
+  position: fixed;
+  transform: translate(-50%, calc(-100% - 10px));
+  background: var(--ink);
+  color: var(--card);
+  padding: 6px 9px;
+  border-radius: 6px;
+  font-family: var(--font-body);
+  font-size: 12px;
+  line-height: 1.4;
+  white-space: nowrap;
+  pointer-events: none;
+  z-index: 1000;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.18);
 }
 
 .contrib-cell.empty-day {
