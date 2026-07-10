@@ -165,6 +165,7 @@ def get_topics():
 
 
 @app.route("/api/topics", methods=["POST"])
+@admin_required
 def add_topic():
     data = request.get_json(force=True)
     name = (data.get("name") or "").strip()
@@ -205,6 +206,7 @@ def add_topic():
 
 
 @app.route("/api/topics/<slug>", methods=["PATCH"])
+@admin_required
 def update_topic(slug):
     topics = load_topics()
     topic = next((t for t in topics if t["slug"] == slug), None)
@@ -224,6 +226,7 @@ def update_topic(slug):
 # --- Uploads API -----------------------------------------------------------
 
 @app.route("/api/uploads", methods=["POST"])
+@admin_required
 def upload_file():
     file = request.files.get("file")
     if not file or not file.filename:
@@ -252,6 +255,7 @@ def get_entries(slug):
 
 
 @app.route("/api/topics/<slug>/entries", methods=["POST"])
+@admin_required
 def add_entry(slug):
     topic = find_topic(slug)
     if not topic:
@@ -304,6 +308,7 @@ def get_entry(slug, entry_id):
 
 
 @app.route("/api/topics/<slug>/entries/<int:entry_id>", methods=["PATCH"])
+@admin_required
 def update_entry(slug, entry_id):
     if not find_topic(slug):
         return jsonify({"error": "Unknown topic."}), 404

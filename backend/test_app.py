@@ -136,3 +136,38 @@ def test_login_rejects_malformed_payloads(auth_client):
     for body, ctype in bad:
         res = auth_client.post("/api/auth/login", data=body, content_type=ctype)
         assert res.status_code == 401, f"{body!r} -> {res.status_code}"
+
+
+def test_writes_locked_out_for_visitors(auth_client):
+    checks = [
+        ("post", "/api/topics", {"json": {"name": "Reads"}}),
+        ("patch", "/api/topics/runs", {"json": {"layout": "thumbnail"}}),
+        ("post", "/api/topics/runs/entries", {"json": {"date": "2026-07-10"}}),
+        ("patch", "/api/topics/runs/entries/1",
+         {"json": {"body": {"type": "doc", "content": []}}}),
+        ("post", "/api/uploads", {"data": {}}),
+    ]
+    for method, url, kwargs in checks:
+        res = getattr(auth_client, method)(url, **kwargs)
+        assert res.status_code == 403, f"{method} {url} -> {res.status_code}"
+        assert res.get_json()["error"] == "Only admin can make changes."
+
+
+def test_writes_allowed_after_login(auth_client):
+    log_in(auth_client)
+    res = auth_client.post(
+        "/api/topics/runs/entries", json={"date": "2026-07-10", "title": "Run"}
+    )
+    assert res.status_code == 201
+
+
+def test_writes_locked_again_after_logout(auth_client):
+    log_in(auth_client)
+    auth_client.post("/api/auth/logout")
+    res = auth_client.post("/api/topics/runs/entries", json={"date": "2026-07-10"})
+    assert res.status_code == 403
+
+
+def test_reads_stay_public(auth_client):
+    assert auth_client.get("/api/topics").status_code == 200
+    assert auth_client.get("/api/topics/runs/entries").status_code == 200
