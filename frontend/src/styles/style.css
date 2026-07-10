@@ -310,17 +310,18 @@ h3 {
 .cell-tooltip {
   position: fixed;
   transform: translate(-50%, calc(-100% - 10px));
-  background: var(--ink);
-  color: var(--card);
-  padding: 6px 9px;
-  border-radius: 6px;
+  background: #fdf1df;
+  color: var(--ink);
+  border: 1px solid var(--border-soft);
+  padding: 7px 12px;
+  border-radius: 14px;
   font-family: var(--font-body);
   font-size: 12px;
   line-height: 1.4;
   white-space: nowrap;
   pointer-events: none;
   z-index: 1000;
-  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.18);
+  box-shadow: 0 6px 18px rgba(var(--shadow-tint), 0.22);
 }
 
 .contrib-cell.empty-day {
