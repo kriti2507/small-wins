@@ -6,6 +6,9 @@ describe("spiralCoords", () => {
     expect(spiralCoords(0)).toEqual([]);
     expect(spiralCoords(-3)).toEqual([]);
   });
+  test("n=1 is just the center", () => {
+    expect(spiralCoords(1)).toEqual([[0, 0]]);
+  });
   test("starts at the center and winds outward", () => {
     expect(spiralCoords(5)).toEqual([
       [0, 0],
