@@ -9,6 +9,7 @@ import EntryForm from "../components/EntryForm";
 import EntryList from "../components/EntryList";
 import RangeControls, { type Preset } from "../components/RangeControls";
 import AdminGate from "../components/AdminGate";
+import BackgroundDoodles from "../components/BackgroundDoodles";
 
 const PRESETS: Preset[] = [
   { key: "30", label: "30d" },
@@ -105,6 +106,7 @@ export default function TopicPage() {
 
   return (
     <>
+      <BackgroundDoodles />
       <Link className="back" to="/">
         ← Back
       </Link>

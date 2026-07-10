@@ -7,6 +7,7 @@ import Capsule, { type CapsuleTopicData } from "../components/Capsule";
 import AspectGrid from "../components/AspectGrid";
 import TopicForm from "../components/TopicForm";
 import RangeControls, { type Preset } from "../components/RangeControls";
+import BackgroundDoodles from "../components/BackgroundDoodles";
 
 const PRESETS: Preset[] = [
   { key: "7", label: "Last 7 days" },
@@ -72,6 +73,7 @@ export default function HomePage() {
 
   return (
     <>
+      <BackgroundDoodles />
       <h1>Small Wins</h1>
 
       <section className="capsule">
