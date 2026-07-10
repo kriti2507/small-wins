@@ -3,6 +3,7 @@ import { AuthProvider } from "./auth";
 import HomePage from "./pages/HomePage";
 import TopicPage from "./pages/TopicPage";
 import EntryPage from "./pages/EntryPage";
+import LoginPage from "./pages/LoginPage";
 
 export default function App() {
   return (
@@ -12,6 +13,7 @@ export default function App() {
           <Route path="/" element={<HomePage />} />
           <Route path="/topic/:slug" element={<TopicPage />} />
           <Route path="/topic/:slug/entry/:id" element={<EntryPage />} />
+          <Route path="/login" element={<LoginPage />} />
         </Routes>
       </BrowserRouter>
     </AuthProvider>

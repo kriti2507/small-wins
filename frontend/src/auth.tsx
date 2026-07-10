@@ -36,7 +36,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }
 
   async function logout() {
-    await api.logout();
+    // Always lock the UI, even if the API call fails; the cookie (if it
+    // survived) is reconciled by the next /api/auth/me check.
+    await api.logout().catch(() => {});
     setIsAdmin(false);
   }
 

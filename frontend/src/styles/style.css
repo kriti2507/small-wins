@@ -914,3 +914,35 @@ a.back:hover {
 .admin-gate.gate-block .admin-gate-content > * {
   height: 100%;
 }
+
+/* Hidden admin login page */
+.login-form {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  flex-wrap: wrap;
+  max-width: 420px;
+}
+
+.login-form input {
+  flex: 1;
+  min-width: 200px;
+  font: inherit;
+  padding: 0.45rem 0.6rem;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--ink);
+  transition: border-color 0.2s ease;
+}
+
+.login-form input:focus {
+  border-color: var(--ink-faint);
+}
+
+.login-error {
+  flex-basis: 100%;
+  color: #a4442d;
+  font-size: 14px;
+  margin: 0;
+}
