@@ -185,6 +185,25 @@ def resolve_post_path(ref):
     return full
 
 
+def load_post(ref):
+    """The TipTap doc a reference points at, or None if it can't be read."""
+    path = resolve_post_path(ref)
+    if not path or not os.path.exists(path):
+        return None
+    with open(path) as f:
+        return json.load(f)
+
+
+def with_body(entry):
+    """API view of a stored entry: join the post body in, hide the reference."""
+    out = {k: v for k, v in entry.items() if k != "post"}
+    if entry.get("post"):
+        doc = load_post(entry["post"])
+        if doc is not None:
+            out["body"] = doc
+    return out
+
+
 # --- Topics API ------------------------------------------------------------
 
 @app.route("/api/topics", methods=["GET"])
@@ -279,7 +298,7 @@ def serve_upload(filename):
 def get_entries(slug):
     if not find_topic(slug):
         return jsonify({"error": "Unknown topic."}), 404
-    return jsonify(load_entries(slug))
+    return jsonify([with_body(e) for e in load_entries(slug)])
 
 
 @app.route("/api/topics/<slug>/entries", methods=["POST"])
@@ -332,7 +351,7 @@ def get_entry(slug, entry_id):
     entry = find_entry(load_entries(slug), entry_id)
     if not entry:
         return jsonify({"error": "Unknown entry."}), 404
-    return jsonify(entry)
+    return jsonify(with_body(entry))
 
 
 @app.route("/api/topics/<slug>/entries/<int:entry_id>", methods=["PATCH"])
@@ -351,10 +370,15 @@ def update_entry(slug, entry_id):
         body = data["body"]
         if not valid_body(body):
             return jsonify({"error": "Invalid post body."}), 400
-        entry["body"] = body
+        ref = entry.get("post")
+        if not ref or resolve_post_path(ref) is None:
+            ref = post_ref(entry, slug)
+        save_json(resolve_post_path(ref), body)
+        entry["post"] = ref
+        entry.pop("body", None)  # entry not migrated yet: drop the stale inline copy
 
     save_json(entries_path(slug), entries)
-    return jsonify(entry)
+    return jsonify(with_body(entry))
 
 
 if __name__ == "__main__":

@@ -1,3 +1,4 @@
+import json
 import pytest
 from werkzeug.security import generate_password_hash
 
@@ -207,3 +208,43 @@ def test_resolve_post_path_stays_inside_posts_dir(tmp_path, monkeypatch):
     assert app_module.resolve_post_path("postsx/a.json") is None
     assert app_module.resolve_post_path(None) is None
     assert app_module.resolve_post_path(5) is None
+
+
+def test_patch_stores_body_in_post_file(client, tmp_path):
+    entry_id = make_entry(client)
+    res = client.patch(f"/api/topics/runs/entries/{entry_id}", json={"body": DOC})
+    assert res.status_code == 200
+
+    post_file = tmp_path / "posts" / "runs" / f"{entry_id}_run.json"
+    assert json.loads(post_file.read_text()) == DOC
+
+    stored = json.loads((tmp_path / "runs.json").read_text())
+    stored_entry = next(e for e in stored if e["id"] == entry_id)
+    assert "body" not in stored_entry
+    assert stored_entry["post"] == f"posts/runs/{entry_id}_run.json"
+
+
+def test_api_responses_hide_the_post_reference(client):
+    entry_id = make_entry(client)
+    client.patch(f"/api/topics/runs/entries/{entry_id}", json={"body": DOC})
+
+    single = client.get(f"/api/topics/runs/entries/{entry_id}").get_json()
+    assert single["body"] == DOC
+    assert "post" not in single
+
+    listed = client.get("/api/topics/runs/entries").get_json()
+    entry = next(e for e in listed if e["id"] == entry_id)
+    assert entry["body"] == DOC
+    assert "post" not in entry
+
+
+def test_repeated_saves_reuse_the_same_post_file(client, tmp_path):
+    entry_id = make_entry(client)
+    client.patch(f"/api/topics/runs/entries/{entry_id}", json={"body": DOC})
+    doc2 = {"type": "doc", "content": [{"type": "paragraph",
+            "content": [{"type": "text", "text": "edited"}]}]}
+    client.patch(f"/api/topics/runs/entries/{entry_id}", json={"body": doc2})
+
+    posts = list((tmp_path / "posts" / "runs").iterdir())
+    assert len(posts) == 1
+    assert json.loads(posts[0].read_text()) == doc2
