@@ -300,3 +300,64 @@ def test_escaping_reference_is_ignored(client, tmp_path):
     assert res.status_code == 200
     body = res.get_json()
     assert "body" not in body and "post" not in body
+
+
+def seed_legacy_entries(client, tmp_path, entries):
+    client.get("/api/topics")  # seeds the default "runs" topic
+    (tmp_path / "runs.json").write_text(json.dumps(entries))
+
+
+def test_migrates_inline_doc_bodies_on_read(client, tmp_path):
+    legacy = [
+        {"id": 1, "date": "2026-07-01", "title": "Old Run", "body": DOC},
+        {"id": 2, "date": "2026-07-02", "title": "No Post"},
+    ]
+    seed_legacy_entries(client, tmp_path, legacy)
+
+    res = client.get("/api/topics/runs/entries")
+    assert res.status_code == 200
+    assert res.get_json()[0]["body"] == DOC
+
+    post_file = tmp_path / "posts" / "runs" / "1_old_run.json"
+    assert json.loads(post_file.read_text()) == DOC
+
+    stored = json.loads((tmp_path / "runs.json").read_text())
+    assert "body" not in stored[0]
+    assert stored[0]["post"] == "posts/runs/1_old_run.json"
+    assert "post" not in stored[1]
+
+    assert json.loads((tmp_path / "runs.json.bak").read_text()) == legacy
+
+
+def test_migrates_legacy_block_bodies(client, tmp_path):
+    blocks = [
+        {"type": "text", "text": "line one\n\nline two"},
+        {"type": "image", "url": "/api/uploads/x.jpg"},
+    ]
+    seed_legacy_entries(
+        client, tmp_path,
+        [{"id": 1, "date": "2026-07-01", "title": "Blocks", "body": blocks}],
+    )
+
+    body = client.get("/api/topics/runs/entries/1").get_json()["body"]
+    assert body == {
+        "type": "doc",
+        "content": [
+            {"type": "paragraph", "content": [{"type": "text", "text": "line one"}]},
+            {"type": "paragraph", "content": [{"type": "text", "text": "line two"}]},
+            {"type": "figure", "attrs": {"src": "/api/uploads/x.jpg", "width": "normal"}},
+        ],
+    }
+
+
+def test_migration_is_idempotent(client, tmp_path):
+    legacy = [{"id": 1, "date": "2026-07-01", "title": "Old Run", "body": DOC}]
+    seed_legacy_entries(client, tmp_path, legacy)
+
+    client.get("/api/topics/runs/entries")
+    migrated = (tmp_path / "runs.json").read_text()
+
+    client.get("/api/topics/runs/entries")
+    assert (tmp_path / "runs.json").read_text() == migrated
+    # the backup still holds the original, not a re-copy of migrated data
+    assert json.loads((tmp_path / "runs.json.bak").read_text()) == legacy

@@ -1,6 +1,7 @@
 import json
 import os
 import re
+import shutil
 import time
 import uuid
 from datetime import timedelta
@@ -160,8 +161,50 @@ def entries_path(slug):
     return os.path.join(DATA_DIR, f"{slug}.json")
 
 
+def to_doc(body):
+    """Mirror of the frontend's toDoc (frontend/src/lib/post.ts): legacy
+    Block[] bodies become TipTap docs; docs pass through as-is."""
+    if isinstance(body, dict):
+        return body
+    content = []
+    for b in body or []:
+        if b.get("type") == "image":
+            content.append(
+                {"type": "figure", "attrs": {"src": b.get("url"), "width": "normal"}}
+            )
+        else:
+            for line in (b.get("text") or "").split("\n"):
+                line = line.strip()
+                if line:
+                    content.append(
+                        {"type": "paragraph",
+                         "content": [{"type": "text", "text": line}]}
+                    )
+    return {"type": "doc", "content": content}
+
+
+def split_out_posts(slug, path, entries):
+    """One-time migration: move inline bodies into per-post files."""
+    bak = path + ".bak"
+    if not os.path.exists(bak):
+        shutil.copyfile(path, bak)
+    for e in entries:
+        if "body" not in e:
+            continue
+        doc = to_doc(e.pop("body"))
+        ref = post_ref(e, slug)
+        save_json(os.path.join(DATA_DIR, ref), doc)
+        e["post"] = ref
+    save_json(path, entries)
+    return entries
+
+
 def load_entries(slug):
-    return load_json(entries_path(slug), [])
+    path = entries_path(slug)
+    entries = load_json(path, [])
+    if any("body" in e for e in entries):
+        entries = split_out_posts(slug, path, entries)
+    return entries
 
 
 def post_ref(entry, slug):
