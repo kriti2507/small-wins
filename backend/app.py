@@ -164,6 +164,25 @@ def load_entries(slug):
     return load_json(entries_path(slug), [])
 
 
+def post_ref(entry, slug):
+    """Relative path (from DATA_DIR) of an entry's blog post file."""
+    title_slug = slugify(str(entry.get("title") or ""))
+    name = f"{entry['id']}_{title_slug}.json" if title_slug else f"{entry['id']}.json"
+    return f"posts/{slug}/{name}"
+
+
+def resolve_post_path(ref):
+    """Absolute path for a post reference, or None if it escapes posts/.
+
+    References live in hand-editable JSON, so never trust them to stay put.
+    """
+    full = os.path.normpath(os.path.join(DATA_DIR, ref))
+    posts_root = os.path.join(DATA_DIR, "posts")
+    if not full.startswith(posts_root + os.sep):
+        return None
+    return full
+
+
 # --- Topics API ------------------------------------------------------------
 
 @app.route("/api/topics", methods=["GET"])

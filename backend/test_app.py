@@ -180,3 +180,24 @@ def test_login_rate_limited_after_five_failures(auth_client):
     assert res.status_code == 429
     # Even the correct password is refused while rate-limited.
     assert log_in(auth_client).status_code == 429
+
+
+# --- Post file storage --------------------------------------------------------
+
+def test_post_ref_names_file_by_id_and_title():
+    ref = app_module.post_ref({"id": 3, "title": "Morning Tempo!"}, "runs")
+    assert ref == "posts/runs/3_morning_tempo.json"
+
+
+def test_post_ref_without_usable_title_uses_id_only():
+    assert app_module.post_ref({"id": 7, "title": "  "}, "runs") == "posts/runs/7.json"
+    assert app_module.post_ref({"id": 8}, "runs") == "posts/runs/8.json"
+
+
+def test_resolve_post_path_stays_inside_posts_dir(tmp_path, monkeypatch):
+    monkeypatch.setattr(app_module, "DATA_DIR", str(tmp_path))
+    ok = app_module.resolve_post_path("posts/runs/1_run.json")
+    assert ok == str(tmp_path / "posts" / "runs" / "1_run.json")
+    assert app_module.resolve_post_path("../evil.json") is None
+    assert app_module.resolve_post_path("posts/../topics.json") is None
+    assert app_module.resolve_post_path("topics.json") is None
