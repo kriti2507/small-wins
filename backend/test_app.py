@@ -361,3 +361,13 @@ def test_migration_is_idempotent(client, tmp_path):
     assert (tmp_path / "runs.json").read_text() == migrated
     # the backup still holds the original, not a re-copy of migrated data
     assert json.loads((tmp_path / "runs.json.bak").read_text()) == legacy
+
+
+def test_non_doc_post_file_degrades_to_no_body(client, tmp_path):
+    entry_id = make_entry(client)
+    client.patch(f"/api/topics/runs/entries/{entry_id}", json={"body": DOC})
+    (tmp_path / "posts" / "runs" / f"{entry_id}_run.json").write_text('{"a": 1}')
+
+    res = client.get(f"/api/topics/runs/entries/{entry_id}")
+    assert res.status_code == 200
+    assert "body" not in res.get_json()

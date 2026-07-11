@@ -422,7 +422,7 @@ def update_entry(slug, entry_id):
             entry["post"] = post_ref(entry, slug)
             path = resolve_post_path(entry["post"])
         save_json(path, body)
-        entry.pop("body", None)  # entry not migrated yet: drop the stale inline copy
+        entry.pop("body", None)  # belt-and-braces; load_entries already migrated inline bodies
 
     save_json(entries_path(slug), entries)
     return jsonify(with_body(entry))
