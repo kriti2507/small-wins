@@ -176,6 +176,8 @@ def resolve_post_path(ref):
 
     References live in hand-editable JSON, so never trust them to stay put.
     """
+    if not isinstance(ref, str):
+        return None
     full = os.path.normpath(os.path.join(DATA_DIR, ref))
     posts_root = os.path.join(DATA_DIR, "posts")
     if not full.startswith(posts_root + os.sep):

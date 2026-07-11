@@ -201,3 +201,9 @@ def test_resolve_post_path_stays_inside_posts_dir(tmp_path, monkeypatch):
     assert app_module.resolve_post_path("../evil.json") is None
     assert app_module.resolve_post_path("posts/../topics.json") is None
     assert app_module.resolve_post_path("topics.json") is None
+    assert app_module.resolve_post_path("/etc/passwd") is None
+    assert app_module.resolve_post_path("") is None
+    assert app_module.resolve_post_path("posts") is None
+    assert app_module.resolve_post_path("postsx/a.json") is None
+    assert app_module.resolve_post_path(None) is None
+    assert app_module.resolve_post_path(5) is None
