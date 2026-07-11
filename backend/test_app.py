@@ -267,3 +267,36 @@ def test_patch_drops_stale_inline_body_from_storage(client, tmp_path):
     stored_entry = next(e for e in stored if e["id"] == entry_id)
     assert "body" not in stored_entry
     assert stored_entry["post"] == f"posts/runs/{entry_id}_run.json"
+
+
+def test_missing_post_file_degrades_to_no_body(client, tmp_path):
+    entry_id = make_entry(client)
+    client.patch(f"/api/topics/runs/entries/{entry_id}", json={"body": DOC})
+    (tmp_path / "posts" / "runs" / f"{entry_id}_run.json").unlink()
+
+    single = client.get(f"/api/topics/runs/entries/{entry_id}")
+    assert single.status_code == 200
+    assert "body" not in single.get_json()
+    assert client.get("/api/topics/runs/entries").status_code == 200
+
+
+def test_corrupt_post_file_degrades_to_no_body(client, tmp_path):
+    entry_id = make_entry(client)
+    client.patch(f"/api/topics/runs/entries/{entry_id}", json={"body": DOC})
+    (tmp_path / "posts" / "runs" / f"{entry_id}_run.json").write_text("not json{{")
+
+    res = client.get(f"/api/topics/runs/entries/{entry_id}")
+    assert res.status_code == 200
+    assert "body" not in res.get_json()
+
+
+def test_escaping_reference_is_ignored(client, tmp_path):
+    entry_id = make_entry(client)
+    stored = json.loads((tmp_path / "runs.json").read_text())
+    next(e for e in stored if e["id"] == entry_id)["post"] = "../topics.json"
+    (tmp_path / "runs.json").write_text(json.dumps(stored))
+
+    res = client.get(f"/api/topics/runs/entries/{entry_id}")
+    assert res.status_code == 200
+    body = res.get_json()
+    assert "body" not in body and "post" not in body

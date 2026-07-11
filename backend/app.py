@@ -190,8 +190,12 @@ def load_post(ref):
     path = resolve_post_path(ref)
     if not path or not os.path.exists(path):
         return None
-    with open(path) as f:
-        return json.load(f)
+    try:
+        with open(path) as f:
+            doc = json.load(f)
+    except (OSError, json.JSONDecodeError):
+        return None
+    return doc if valid_body(doc) else None
 
 
 def with_body(entry):
