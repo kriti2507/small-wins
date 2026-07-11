@@ -370,11 +370,11 @@ def update_entry(slug, entry_id):
         body = data["body"]
         if not valid_body(body):
             return jsonify({"error": "Invalid post body."}), 400
-        ref = entry.get("post")
-        if not ref or resolve_post_path(ref) is None:
-            ref = post_ref(entry, slug)
-        save_json(resolve_post_path(ref), body)
-        entry["post"] = ref
+        path = resolve_post_path(entry.get("post") or "")
+        if path is None:
+            entry["post"] = post_ref(entry, slug)
+            path = resolve_post_path(entry["post"])
+        save_json(path, body)
         entry.pop("body", None)  # entry not migrated yet: drop the stale inline copy
 
     save_json(entries_path(slug), entries)

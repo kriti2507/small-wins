@@ -214,6 +214,9 @@ def test_patch_stores_body_in_post_file(client, tmp_path):
     entry_id = make_entry(client)
     res = client.patch(f"/api/topics/runs/entries/{entry_id}", json={"body": DOC})
     assert res.status_code == 200
+    patched = res.get_json()
+    assert patched["body"] == DOC
+    assert "post" not in patched
 
     post_file = tmp_path / "posts" / "runs" / f"{entry_id}_run.json"
     assert json.loads(post_file.read_text()) == DOC
@@ -248,3 +251,19 @@ def test_repeated_saves_reuse_the_same_post_file(client, tmp_path):
     posts = list((tmp_path / "posts" / "runs").iterdir())
     assert len(posts) == 1
     assert json.loads(posts[0].read_text()) == doc2
+
+
+def test_patch_drops_stale_inline_body_from_storage(client, tmp_path):
+    entry_id = make_entry(client)
+    # Simulate an un-migrated entry: inline body, no post reference.
+    stored = json.loads((tmp_path / "runs.json").read_text())
+    next(e for e in stored if e["id"] == entry_id)["body"] = DOC
+    (tmp_path / "runs.json").write_text(json.dumps(stored))
+
+    res = client.patch(f"/api/topics/runs/entries/{entry_id}", json={"body": DOC})
+    assert res.status_code == 200
+
+    stored = json.loads((tmp_path / "runs.json").read_text())
+    stored_entry = next(e for e in stored if e["id"] == entry_id)
+    assert "body" not in stored_entry
+    assert stored_entry["post"] == f"posts/runs/{entry_id}_run.json"
