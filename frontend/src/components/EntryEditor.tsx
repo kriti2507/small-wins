@@ -101,18 +101,23 @@ export default function EntryEditor({ topic, entry, saving, onSave, onCancel }: 
     }
   }
 
+  // Details live in their own boxed card; the post body keeps the full-width
+  // writing space it has in the reading view (the card would otherwise clamp it
+  // to the narrow form width).
   return (
-    <div className="form">
-      <EntryFields
-        topic={topic}
-        values={values}
-        onChange={set}
-        preview={preview}
-        onFile={handleFile}
-        onClearFile={clearFile}
-        existingImage={removeImage ? null : entry.image}
-        onRemoveExisting={() => setRemoveImage(true)}
-      />
+    <>
+      <div className="form">
+        <EntryFields
+          topic={topic}
+          values={values}
+          onChange={set}
+          preview={preview}
+          onFile={handleFile}
+          onClearFile={clearFile}
+          existingImage={removeImage ? null : entry.image}
+          onRemoveExisting={() => setRemoveImage(true)}
+        />
+      </div>
       <PostBody editor={editor} onUploadingChange={setUploading} />
       {error && <p className="form-error">{error}</p>}
       <div className="toolbar">
@@ -128,6 +133,6 @@ export default function EntryEditor({ topic, entry, saving, onSave, onCancel }: 
           Cancel
         </button>
       </div>
-    </div>
+    </>
   );
 }
