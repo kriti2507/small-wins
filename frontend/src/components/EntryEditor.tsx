@@ -119,7 +119,7 @@ export default function EntryEditor({ topic, entry, saving, onSave, onCancel }: 
         <button
           type="button"
           className="primary"
-          disabled={saving || uploading || submitting}
+          disabled={saving || uploading || submitting || !editor}
           onClick={handleSave}
         >
           {saving ? "Saving…" : uploading ? "Uploading…" : "Save"}
