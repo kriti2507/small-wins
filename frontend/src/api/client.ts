@@ -44,15 +44,22 @@ export function getEntry(slug: string, id: number): Promise<Entry> {
   return fetch(`/api/topics/${slug}/entries/${id}`).then((r) => json<Entry>(r));
 }
 
-export function saveEntryBody(
+export interface EntryUpdate {
+  date?: string;
+  image?: string | null;
+  body?: PostDoc;
+  [fieldKey: string]: string | number | null | PostDoc | undefined;
+}
+
+export function updateEntry(
   slug: string,
   id: number,
-  body: PostDoc,
+  payload: EntryUpdate,
 ): Promise<Entry> {
   return fetch(`/api/topics/${slug}/entries/${id}`, {
     method: "PATCH",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ body }),
+    body: JSON.stringify(payload),
   }).then((r) => json<Entry>(r));
 }
 
