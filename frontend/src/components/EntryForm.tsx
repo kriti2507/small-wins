@@ -2,6 +2,7 @@ import { useState } from "react";
 import type { Topic } from "../types";
 import { parsePace } from "../lib/pace";
 import { addEntry, uploadImage } from "../api/client";
+import EntryFields from "./EntryFields";
 
 interface Props {
   topic: Topic;
@@ -65,56 +66,14 @@ export default function EntryForm({ topic, onAdded, onCancel }: Props) {
 
   return (
     <form className="form" onSubmit={handleSubmit}>
-      <div>
-        {topic.fields.map((f) => (
-          <label key={f.key}>
-            {f.label}
-            {f.type === "pace" ? (
-              <input
-                type="text"
-                placeholder={"8'35\""}
-                value={values[f.key] ?? ""}
-                onChange={(e) => set(f.key, e.target.value)}
-              />
-            ) : f.type === "number" ? (
-              <input
-                type="number"
-                step="any"
-                value={values[f.key] ?? ""}
-                onChange={(e) => set(f.key, e.target.value)}
-              />
-            ) : (
-              <input
-                type="text"
-                value={values[f.key] ?? ""}
-                onChange={(e) => set(f.key, e.target.value)}
-              />
-            )}
-          </label>
-        ))}
-      </div>
-      <label>
-        Photo (optional)
-        <input type="file" accept="image/*" onChange={handleFile} />
-      </label>
-      {preview && (
-        <div className="photo-preview">
-          <img src={preview} alt="preview" />
-          <button type="button" onClick={clearFile}>
-            Remove
-          </button>
-        </div>
-      )}
-      <label>
-        Date
-        <input
-          type="date"
-          name="date"
-          required
-          value={values.date ?? ""}
-          onChange={(e) => set("date", e.target.value)}
-        />
-      </label>
+      <EntryFields
+        topic={topic}
+        values={values}
+        onChange={set}
+        preview={preview}
+        onFile={handleFile}
+        onClearFile={clearFile}
+      />
       {error && <p className="form-error">{error}</p>}
       <div className="toolbar">
         <button type="submit" className="primary">
