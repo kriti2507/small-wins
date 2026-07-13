@@ -38,8 +38,11 @@ export default function EntryEditor({ topic, entry, saving, onSave, onCancel }: 
   const [preview, setPreview] = useState("");
   const [removeImage, setRemoveImage] = useState(false);
   const [uploading, setUploading] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
 
+  // The editor initializes its content once; the parent mounts EntryEditor with
+  // key={entry.id} so switching entries remounts it with fresh content.
   const doc = useMemo(() => toDoc(entry.body), [entry]);
   const editor = useEditor({
     extensions: postExtensions(),
@@ -83,6 +86,7 @@ export default function EntryEditor({ topic, entry, saving, onSave, onCancel }: 
       }
     }
     try {
+      setSubmitting(true);
       if (file) {
         const { url } = await uploadImage(file);
         payload.image = url;
@@ -91,6 +95,7 @@ export default function EntryEditor({ topic, entry, saving, onSave, onCancel }: 
       }
       onSave(payload);
     } catch (err) {
+      setSubmitting(false);
       setError((err as Error).message || "Could not save entry.");
     }
   }
@@ -113,7 +118,7 @@ export default function EntryEditor({ topic, entry, saving, onSave, onCancel }: 
         <button
           type="button"
           className="primary"
-          disabled={saving || uploading}
+          disabled={saving || uploading || submitting}
           onClick={handleSave}
         >
           {saving ? "Saving…" : uploading ? "Uploading…" : "Save"}
