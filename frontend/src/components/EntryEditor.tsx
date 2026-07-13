@@ -85,8 +85,8 @@ export default function EntryEditor({ topic, entry, saving, onSave, onCancel }: 
         payload[f.key] = raw;
       }
     }
+    setSubmitting(true);
     try {
-      setSubmitting(true);
       if (file) {
         const { url } = await uploadImage(file);
         payload.image = url;
@@ -95,8 +95,9 @@ export default function EntryEditor({ topic, entry, saving, onSave, onCancel }: 
       }
       onSave(payload);
     } catch (err) {
-      setSubmitting(false);
       setError((err as Error).message || "Could not save entry.");
+    } finally {
+      setSubmitting(false);
     }
   }
 
