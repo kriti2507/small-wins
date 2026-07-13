@@ -404,7 +404,8 @@ def get_entry(slug, entry_id):
 @app.route("/api/topics/<slug>/entries/<int:entry_id>", methods=["PATCH"])
 @admin_required
 def update_entry(slug, entry_id):
-    if not find_topic(slug):
+    topic = find_topic(slug)
+    if not topic:
         return jsonify({"error": "Unknown topic."}), 404
 
     entries = load_entries(slug)
@@ -413,6 +414,21 @@ def update_entry(slug, entry_id):
         return jsonify({"error": "Unknown entry."}), 404
 
     data = request.get_json(force=True)
+
+    if "date" in data:
+        entry["date"] = data.get("date", "")
+    if "image" in data:
+        entry["image"] = data.get("image") or None
+    for field in topic["fields"]:
+        key = field["key"]
+        if key not in data:
+            continue
+        val = data.get(key)
+        if field["type"] in ("number", "pace"):
+            entry[key] = float(val) if val not in (None, "") else None
+        else:
+            entry[key] = val if val is not None else ""
+
     if "body" in data:
         body = data["body"]
         if not valid_body(body):

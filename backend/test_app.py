@@ -96,6 +96,61 @@ def test_patch_rejects_oversized_body(client):
     assert res.status_code == 400
 
 
+def test_patch_updates_text_and_number_fields(client):
+    entry_id = make_entry(client)
+    res = client.patch(
+        f"/api/topics/runs/entries/{entry_id}",
+        json={"title": "Morning run", "distance": "5.25"},
+    )
+    assert res.status_code == 200
+    entry = client.get(f"/api/topics/runs/entries/{entry_id}").get_json()
+    assert entry["title"] == "Morning run"
+    assert entry["distance"] == 5.25  # coerced to float
+
+
+def test_patch_updates_date_and_image(client):
+    entry_id = make_entry(client)
+    client.patch(
+        f"/api/topics/runs/entries/{entry_id}",
+        json={"date": "2026-07-13", "image": "/api/uploads/x.jpg"},
+    )
+    entry = client.get(f"/api/topics/runs/entries/{entry_id}").get_json()
+    assert entry["date"] == "2026-07-13"
+    assert entry["image"] == "/api/uploads/x.jpg"
+
+
+def test_patch_coerces_pace_and_blanks_to_none(client):
+    entry_id = make_entry(client)
+    client.patch(f"/api/topics/runs/entries/{entry_id}", json={"pace": 315})
+    client.patch(f"/api/topics/runs/entries/{entry_id}", json={"distance": ""})
+    entry = client.get(f"/api/topics/runs/entries/{entry_id}").get_json()
+    assert entry["pace"] == 315.0
+    assert entry["distance"] is None
+
+
+def test_patch_ignores_unknown_keys(client):
+    entry_id = make_entry(client)
+    client.patch(
+        f"/api/topics/runs/entries/{entry_id}",
+        json={"bogus": "x", "id": 999},
+    )
+    entry = client.get(f"/api/topics/runs/entries/{entry_id}").get_json()
+    assert "bogus" not in entry
+    assert entry["id"] == entry_id  # id is not overwritten
+
+
+def test_patch_updates_fields_and_body_together(client):
+    entry_id = make_entry(client)
+    res = client.patch(
+        f"/api/topics/runs/entries/{entry_id}",
+        json={"title": "Combined", "body": DOC},
+    )
+    assert res.status_code == 200
+    entry = client.get(f"/api/topics/runs/entries/{entry_id}").get_json()
+    assert entry["title"] == "Combined"
+    assert entry["body"] == DOC
+
+
 # --- Auth -------------------------------------------------------------------
 
 def test_me_reports_admin_in_dev_mode(client):
