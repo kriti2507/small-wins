@@ -1,25 +1,29 @@
 import json
 import os
-import re
-import shutil
 import time
 import uuid
 from datetime import timedelta
 from functools import wraps
-from flask import Flask, jsonify, request, send_from_directory, session
-from werkzeug.security import check_password_hash
-from werkzeug.utils import secure_filename
 
-# API only: the React frontend is served separately (Vite in dev, a static
-# host in prod). This app exposes just the /api/* contract.
+from dotenv import load_dotenv
+from flask import Flask, g, jsonify, request, session
+from werkzeug.security import check_password_hash
+
+import db
+import storage
+
+# Local dev reads DB/storage config from backend/.env; on Vercel these come
+# from the dashboard and this call is a harmless no-op.
+load_dotenv(os.path.join(os.path.dirname(__file__), ".env"))
+
+# API only: the React frontend is served separately (Vite in dev, Vercel static
+# in prod). This app exposes just the /api/* contract.
 app = Flask(__name__, static_folder=None)
 app.config["MAX_CONTENT_LENGTH"] = 5 * 1024 * 1024  # 5 MB per upload
 
 # --- Auth ------------------------------------------------------------------
-# Single-admin auth. If ADMIN_PASSWORD_HASH is unset (local dev), every
-# request is treated as admin. In production, set:
-#   ADMIN_PASSWORD_HASH  werkzeug hash of the admin password
-#   SECRET_KEY           random string that signs the session cookie
+# Single-admin auth. If ADMIN_PASSWORD_HASH is unset (local dev), every request
+# is treated as admin. In production, set ADMIN_PASSWORD_HASH and SECRET_KEY.
 ADMIN_PASSWORD_HASH = os.environ.get("ADMIN_PASSWORD_HASH")
 app.secret_key = os.environ.get("SECRET_KEY", "dev-only-not-secret")
 if ADMIN_PASSWORD_HASH and app.secret_key == "dev-only-not-secret":
@@ -29,17 +33,25 @@ app.config["SESSION_COOKIE_HTTPONLY"] = True
 app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
 app.config["SESSION_COOKIE_SECURE"] = bool(ADMIN_PASSWORD_HASH)
 
-# Behind a reverse proxy (the usual production setup), trust X-Forwarded-For
-# so the login rate limit sees real client IPs, not the proxy's.
+# Behind Vercel (a reverse proxy), trust X-Forwarded-For so the login rate
+# limit sees real client IPs. Set TRUST_PROXY=1 in the Vercel env.
 if os.environ.get("TRUST_PROXY"):
     from werkzeug.middleware.proxy_fix import ProxyFix
 
     app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1)
 
-# Failed-login timestamps per IP, pruned to the last minute.
+# Failed-login timestamps per IP. Best-effort on serverless (resets on cold
+# starts); acceptable for a single admin.
 LOGIN_ATTEMPTS = {}
 MAX_LOGIN_ATTEMPTS = 5
 LOGIN_WINDOW_SECONDS = 60
+
+
+@app.teardown_appcontext
+def _close_db(exc):
+    conn = g.pop("db_conn", None)
+    if conn is not None:
+        conn.close()
 
 
 def is_admin():
@@ -52,6 +64,7 @@ def admin_required(fn):
         if not is_admin():
             return jsonify({"error": "Only admin can make changes."}), 403
         return fn(*args, **kwargs)
+
     return wrapper
 
 
@@ -95,12 +108,6 @@ def auth_logout():
     return jsonify({"is_admin": False})
 
 
-DATA_DIR = os.path.join(os.path.dirname(__file__), "data")
-TOPICS_FILE = os.path.join(DATA_DIR, "topics.json")
-UPLOADS_DIR = os.path.join(DATA_DIR, "uploads")
-ALLOWED_EXT = {"png", "jpg", "jpeg", "gif", "webp"}
-
-
 # Color ids the frontend palette offers; the first is the default.
 COLORS = [
     "green", "blue", "orange", "purple", "teal", "rose",
@@ -110,144 +117,31 @@ COLORS = [
 # Tile layouts a topic can use for its entry list; the first is the default.
 LAYOUTS = ("photo-top", "thumbnail")
 
+ALLOWED_EXT = {"png", "jpg", "jpeg", "gif", "webp"}
+MAX_BODY_BYTES = 1_000_000  # serialized cap; well under the 5 MB request limit
+
+import re  # noqa: E402  (kept next to its only user)
+
 
 def slugify(s):
     return re.sub(r"[^a-z0-9]+", "_", s.lower()).strip("_")
 
 
-def load_json(path, default):
-    if not os.path.exists(path):
-        return default
-    with open(path) as f:
-        return json.load(f)
+def valid_body(body):
+    """A post body is a TipTap doc: {"type": "doc", "content": [...]}."""
+    if not isinstance(body, dict) or body.get("type") != "doc":
+        return False
+    if not isinstance(body.get("content", []), list):
+        return False
+    return len(json.dumps(body)) <= MAX_BODY_BYTES
 
 
-def save_json(path, value):
-    os.makedirs(os.path.dirname(path), exist_ok=True)
-    with open(path, "w") as f:
-        json.dump(value, f, indent=2)
-
-
-DEFAULT_TOPICS = [
-    {
-        "slug": "runs",
-        "name": "Runs",
-        "color": "green",
-        "fields": [
-            {"key": "title", "label": "Title", "type": "text", "direction": "none"},
-            {"key": "distance", "label": "Distance (km)", "type": "number", "direction": "higher"},
-            {"key": "pace", "label": "Pace", "type": "pace", "direction": "lower"},
-            {"key": "heart_rate", "label": "Heart rate (bpm)", "type": "number", "direction": "none"},
-        ],
-    }
-]
-
-
-def ensure_seed():
-    if not os.path.exists(TOPICS_FILE):
-        save_json(TOPICS_FILE, DEFAULT_TOPICS)
-
-
-def load_topics():
-    ensure_seed()
-    return load_json(TOPICS_FILE, [])
-
-
-def find_topic(slug):
-    return next((t for t in load_topics() if t["slug"] == slug), None)
-
-
-def entries_path(slug):
-    return os.path.join(DATA_DIR, f"{slug}.json")
-
-
-def to_doc(body):
-    """Mirror of the frontend's toDoc (frontend/src/lib/post.ts): legacy
-    Block[] bodies become TipTap docs; docs pass through as-is."""
-    if isinstance(body, dict):
-        return body
-    content = []
-    for b in body or []:
-        if b.get("type") == "image":
-            content.append(
-                {"type": "figure", "attrs": {"src": b.get("url"), "width": "normal"}}
-            )
-        else:
-            for line in (b.get("text") or "").split("\n"):
-                line = line.strip()
-                if line:
-                    content.append(
-                        {"type": "paragraph",
-                         "content": [{"type": "text", "text": line}]}
-                    )
-    return {"type": "doc", "content": content}
-
-
-def split_out_posts(slug, path, entries):
-    """One-time migration: move inline bodies into per-post files."""
-    bak = path + ".bak"
-    if not os.path.exists(bak):
-        shutil.copyfile(path, bak)
-    for e in entries:
-        if "body" not in e:
-            continue
-        doc = to_doc(e.pop("body"))
-        ref = post_ref(e, slug)
-        save_json(os.path.join(DATA_DIR, ref), doc)
-        e["post"] = ref
-    save_json(path, entries)
-    return entries
-
-
-def load_entries(slug):
-    path = entries_path(slug)
-    entries = load_json(path, [])
-    if any("body" in e for e in entries):
-        entries = split_out_posts(slug, path, entries)
-    return entries
-
-
-def post_ref(entry, slug):
-    """Relative path (from DATA_DIR) of an entry's blog post file."""
-    title_slug = slugify(str(entry.get("title") or ""))
-    name = f"{entry['id']}_{title_slug}.json" if title_slug else f"{entry['id']}.json"
-    return f"posts/{slug}/{name}"
-
-
-def resolve_post_path(ref):
-    """Absolute path for a post reference, or None if it escapes posts/.
-
-    References live in hand-editable JSON, so never trust them to stay put.
-    """
-    if not isinstance(ref, str):
-        return None
-    full = os.path.normpath(os.path.join(DATA_DIR, ref))
-    posts_root = os.path.join(DATA_DIR, "posts")
-    if not full.startswith(posts_root + os.sep):
-        return None
-    return full
-
-
-def load_post(ref):
-    """The TipTap doc a reference points at, or None if it can't be read."""
-    path = resolve_post_path(ref)
-    if not path or not os.path.exists(path):
-        return None
-    try:
-        with open(path) as f:
-            doc = json.load(f)
-    except (OSError, json.JSONDecodeError):
-        return None
-    return doc if valid_body(doc) else None
-
-
-def with_body(entry):
-    """API view of a stored entry: join the post body in, hide the reference."""
-    out = {k: v for k, v in entry.items() if k != "post"}
-    if entry.get("post"):
-        doc = load_post(entry["post"])
-        if doc is not None:
-            out["body"] = doc
+def with_body(slug, entry):
+    """API view of a stored entry: join the post body in if one exists."""
+    out = dict(entry)
+    doc = db.load_post(slug, entry["id"])
+    if doc is not None:
+        out["body"] = doc
     return out
 
 
@@ -255,7 +149,7 @@ def with_body(entry):
 
 @app.route("/api/topics", methods=["GET"])
 def get_topics():
-    return jsonify(load_topics())
+    return jsonify(db.load_topics())
 
 
 @app.route("/api/topics", methods=["POST"])
@@ -266,15 +160,12 @@ def add_topic():
     slug = slugify(name)
     if not slug:
         return jsonify({"error": "A topic name is required."}), 400
-
-    topics = load_topics()
-    if any(t["slug"] == slug for t in topics):
+    if db.find_topic(slug):
         return jsonify({"error": f"A topic '{name}' already exists."}), 409
 
     color = data.get("color")
     if color not in COLORS:
         color = COLORS[0]
-
     layout = data.get("layout")
     if layout not in LAYOUTS:
         layout = LAYOUTS[0]
@@ -293,17 +184,14 @@ def add_topic():
         )
 
     topic = {"slug": slug, "name": name, "color": color, "layout": layout, "fields": fields}
-    topics.append(topic)
-    save_json(TOPICS_FILE, topics)
-    save_json(entries_path(slug), [])
+    db.add_topic(topic)
     return jsonify(topic), 201
 
 
 @app.route("/api/topics/<slug>", methods=["PATCH"])
 @admin_required
 def update_topic(slug):
-    topics = load_topics()
-    topic = next((t for t in topics if t["slug"] == slug), None)
+    topic = db.find_topic(slug)
     if not topic:
         return jsonify({"error": "Unknown topic."}), 404
 
@@ -311,9 +199,8 @@ def update_topic(slug):
     if "layout" in data:
         if data["layout"] not in LAYOUTS:
             return jsonify({"error": "Invalid layout."}), 400
-        topic["layout"] = data["layout"]
+        topic = db.set_topic_layout(slug, data["layout"])
 
-    save_json(TOPICS_FILE, topics)
     return jsonify(topic)
 
 
@@ -328,37 +215,30 @@ def upload_file():
     ext = file.filename.rsplit(".", 1)[-1].lower() if "." in file.filename else ""
     if ext not in ALLOWED_EXT:
         return jsonify({"error": "Unsupported file type."}), 400
-    os.makedirs(UPLOADS_DIR, exist_ok=True)
-    name = secure_filename(f"{uuid.uuid4().hex}.{ext}")
-    file.save(os.path.join(UPLOADS_DIR, name))
-    return jsonify({"url": f"/api/uploads/{name}"}), 201
-
-
-@app.route("/api/uploads/<path:filename>", methods=["GET"])
-def serve_upload(filename):
-    return send_from_directory(UPLOADS_DIR, filename)
+    name = f"{uuid.uuid4().hex}.{ext}"
+    url = storage.upload_bytes(name, file.read(), file.mimetype or "application/octet-stream")
+    return jsonify({"url": url}), 201
 
 
 # --- Entries API -----------------------------------------------------------
 
 @app.route("/api/topics/<slug>/entries", methods=["GET"])
 def get_entries(slug):
-    if not find_topic(slug):
+    if not db.find_topic(slug):
         return jsonify({"error": "Unknown topic."}), 404
-    return jsonify([with_body(e) for e in load_entries(slug)])
+    return jsonify([with_body(slug, e) for e in db.load_entries(slug)])
 
 
 @app.route("/api/topics/<slug>/entries", methods=["POST"])
 @admin_required
 def add_entry(slug):
-    topic = find_topic(slug)
+    topic = db.find_topic(slug)
     if not topic:
         return jsonify({"error": "Unknown topic."}), 404
 
     data = request.get_json(force=True)
-    entries = load_entries(slug)
     entry = {
-        "id": (max((e["id"] for e in entries), default=0) + 1),
+        "id": db.next_entry_id(slug),
         "date": data.get("date", ""),
         "image": data.get("image") or None,
     }
@@ -370,51 +250,32 @@ def add_entry(slug):
         else:
             entry[key] = val if val is not None else ""
 
-    entries.append(entry)
-    save_json(entries_path(slug), entries)
+    db.save_entry(slug, entry)
     return jsonify(entry), 201
-
-
-def find_entry(entries, entry_id):
-    return next((e for e in entries if e["id"] == entry_id), None)
-
-
-MAX_BODY_BYTES = 1_000_000  # serialized cap; well under the 5 MB request limit
-
-
-def valid_body(body):
-    """A post body is a TipTap doc: {"type": "doc", "content": [...]}."""
-    if not isinstance(body, dict) or body.get("type") != "doc":
-        return False
-    if not isinstance(body.get("content", []), list):
-        return False
-    return len(json.dumps(body)) <= MAX_BODY_BYTES
 
 
 @app.route("/api/topics/<slug>/entries/<int:entry_id>", methods=["GET"])
 def get_entry(slug, entry_id):
-    if not find_topic(slug):
+    if not db.find_topic(slug):
         return jsonify({"error": "Unknown topic."}), 404
-    entry = find_entry(load_entries(slug), entry_id)
+    entry = db.find_entry(slug, entry_id)
     if not entry:
         return jsonify({"error": "Unknown entry."}), 404
-    return jsonify(with_body(entry))
+    return jsonify(with_body(slug, entry))
 
 
 @app.route("/api/topics/<slug>/entries/<int:entry_id>", methods=["PATCH"])
 @admin_required
 def update_entry(slug, entry_id):
-    topic = find_topic(slug)
+    topic = db.find_topic(slug)
     if not topic:
         return jsonify({"error": "Unknown topic."}), 404
 
-    entries = load_entries(slug)
-    entry = find_entry(entries, entry_id)
+    entry = db.find_entry(slug, entry_id)
     if not entry:
         return jsonify({"error": "Unknown entry."}), 404
 
     data = request.get_json(force=True)
-
     if "date" in data:
         entry["date"] = data.get("date", "")
     if "image" in data:
@@ -433,17 +294,11 @@ def update_entry(slug, entry_id):
         body = data["body"]
         if not valid_body(body):
             return jsonify({"error": "Invalid post body."}), 400
-        path = resolve_post_path(entry.get("post") or "")
-        if path is None:
-            entry["post"] = post_ref(entry, slug)
-            path = resolve_post_path(entry["post"])
-        save_json(path, body)
-        entry.pop("body", None)  # belt-and-braces; load_entries already migrated inline bodies
+        db.save_post(slug, entry_id, body)
 
-    save_json(entries_path(slug), entries)
-    return jsonify(with_body(entry))
+    db.save_entry(slug, entry)
+    return jsonify(with_body(slug, entry))
 
 
 if __name__ == "__main__":
-    # Debugger only in dev mode; production should use a real WSGI server.
     app.run(debug=ADMIN_PASSWORD_HASH is None, port=5000)
