@@ -18,6 +18,12 @@ Run the backend and the Vite dev server in two terminals.
 
 **Backend** (Flask API on :5000):
 
+The backend talks to Supabase (Postgres + Storage). Copy
+`backend/.env.example` to `backend/.env` and fill in `DATABASE_URL`,
+`SUPABASE_URL`, `SUPABASE_SERVICE_KEY`, and `SUPABASE_BUCKET` (use a
+**separate dev Supabase project** so local work never touches prod data).
+Leave `ADMIN_PASSWORD_HASH`/`SECRET_KEY` unset locally for dev-admin mode.
+
 ```sh
 pip install -r backend/requirements.txt
 python backend/app.py
@@ -48,9 +54,10 @@ npm test
 
 ## Production build
 
-The frontend and backend are served independently. `npm run build` compiles
-the frontend to `frontend/dist/`, which any static host can serve; point it at
-the backend by proxying `/api` to the Flask app (or set an API base URL).
+The app deploys to Vercel as one project: the Vite build is served as static
+assets and the Flask API runs as a Python serverless function (`api/index.py`,
+routed via `vercel.json`). Data lives in Supabase (Postgres + Storage). See
+`DEPLOYMENT.md` for the full deploy + env setup.
 
 ```sh
 cd frontend && npm run build

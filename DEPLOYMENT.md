@@ -1,136 +1,80 @@
-# Setting the admin password when you deploy
+# Deploying Small Wins (Vercel + Supabase)
 
-Follow these steps **on the server** (the machine that will run the Flask
-backend). Do them once when you first deploy; repeat the same steps any
-time you want to change the password.
+The frontend and Flask API deploy together as one Vercel project; data lives in
+Supabase (Postgres + Storage). Do the one-time setup once, then deploys are
+`git push` (or `vercel --prod`).
 
-This file is committed to the repo (unlike `docs/`, which is gitignored),
-so it travels with a `git clone` to the deployment machine.
+## 1. Supabase setup (once)
 
-## How it works, in one paragraph
+1. Create a Supabase project (a second, separate project for local dev is
+   recommended).
+2. **SQL Editor** → run the contents of `backend/schema.sql`.
+3. **Storage** → new bucket `uploads`, **Public**.
+4. Collect these values:
+   - `DATABASE_URL` — **Transaction pooler** string (port 6543) for Vercel.
+   - `SUPABASE_URL` — project URL.
+   - `SUPABASE_SERVICE_KEY` — the **service_role** key (server-side only).
 
-The app never stores your password. It stores a **hash** — a scrambled
-fingerprint of the password that can't be turned back into it — in an
-environment variable called `ADMIN_PASSWORD_HASH`. A second variable,
-`SECRET_KEY`, signs the login cookie so nobody can forge one. When both
-are set, the site is in production mode: visitors can only read, and
-`/login` asks for your password. When neither is set (your laptop), the
-app is in dev mode and treats you as admin without any password.
+## 2. Admin auth secrets (once)
 
-## Step 0: Prerequisites on the server
-
-You have cloned the repo and installed the backend dependencies:
+The app stores only a hash of your password. Generate both:
 
 ```sh
-git clone git@github.com:kriti2507/small-wins && cd small-wins
-python3 -m venv .venv
-.venv/bin/pip install -r backend/requirements.txt gunicorn
-```
-
-## Step 1: Choose a password
-
-Pick a long password you don't use anywhere else, and save it in your
-password manager **now** — there is no "forgot password" flow. (If you do
-lose it, you haven't lost data: just repeat these steps with a new
-password.)
-
-## Step 2: Generate the password hash
-
-Run this on the server and type your password when prompted:
-
-```sh
-.venv/bin/python -c "from werkzeug.security import generate_password_hash; print(generate_password_hash(input('Password: ')))"
-```
-
-It prints one long line starting with `scrypt:` or `pbkdf2:` — that's the
-hash. Copy the whole line exactly.
-
-- If it errors with `module 'hashlib' has no attribute 'scrypt'` (old
-  Python, e.g. macOS system Python 3.9), use this variant instead:
-
-  ```sh
-  .venv/bin/python -c "from werkzeug.security import generate_password_hash; print(generate_password_hash(input('Password: '), method='pbkdf2'))"
-  ```
-
-- The hash is safe to store on the server, but don't publish it: it can't
-  be reversed, though a leaked hash lets attackers try guesses offline.
-
-## Step 3: Generate the cookie-signing secret
-
-```sh
+.venv/bin/python -c "from werkzeug.security import generate_password_hash; print(generate_password_hash(input('Password: '), method='pbkdf2'))"
 .venv/bin/python -c "import secrets; print(secrets.token_hex(32))"
 ```
 
-Copy the output (64 random hex characters). This is `SECRET_KEY`. You
-never type it anywhere again — it just needs to be set and to stay the
-same across restarts (changing it logs every device out).
+The first line is `ADMIN_PASSWORD_HASH`; the second is `SECRET_KEY`. Save the
+password in your password manager — there is no reset flow (losing it costs no
+data; just regenerate the hash).
 
-## Step 4: Set both as environment variables
+## 3. Vercel environment variables
 
-How depends on how the backend runs. Pick the one that matches:
+In the Vercel project → Settings → Environment Variables, set:
 
-**a) Quick manual test in a shell** — note the **single quotes**, the
-hash contains `$` characters that a shell would otherwise mangle:
+| Var | Value |
+|-----|-------|
+| `DATABASE_URL` | Supabase transaction-pooler string (6543) |
+| `SUPABASE_URL` | `https://PROJECT.supabase.co` |
+| `SUPABASE_SERVICE_KEY` | service_role key |
+| `SUPABASE_BUCKET` | `uploads` |
+| `ADMIN_PASSWORD_HASH` | from step 2 |
+| `SECRET_KEY` | from step 2 |
+| `TRUST_PROXY` | `1` |
 
-```sh
-export ADMIN_PASSWORD_HASH='scrypt:32768:8:1$PASTE$THE_WHOLE_LINE_HERE'
-export SECRET_KEY='paste-the-64-hex-characters-here'
-export TRUST_PROXY=1   # only if nginx/caddy sits in front (it usually does)
-cd backend
-../.venv/bin/gunicorn -w 2 -b 127.0.0.1:5000 app:app
-```
+Never commit these or expose the service key to the frontend.
 
-**b) systemd service (typical Linux server)** — in
-`/etc/systemd/system/small-wins.service`, values are pasted as-is (no
-quoting gymnastics needed):
+## 4. Migrate existing data (once)
 
-```ini
-[Service]
-WorkingDirectory=/home/you/small-wins/backend
-Environment=ADMIN_PASSWORD_HASH=scrypt:32768:8:1$PASTE$THE_WHOLE_LINE
-Environment=SECRET_KEY=paste-the-64-hex-characters
-Environment=TRUST_PROXY=1
-ExecStart=/home/you/small-wins/.venv/bin/gunicorn -w 2 -b 127.0.0.1:5000 app:app
-Restart=on-failure
-```
-
-Then `sudo systemctl daemon-reload && sudo systemctl restart small-wins`.
-
-**c) Hosting platform (Render, Railway, Fly.io, ...)** — paste
-`ADMIN_PASSWORD_HASH`, `SECRET_KEY`, and `TRUST_PROXY=1` into the
-service's environment-variables panel, exactly as generated, then
-redeploy.
-
-Never put either value in the code, in git, or in the frontend.
-
-## Step 5: Verify it worked
+With the same env vars exported locally, from the repo root:
 
 ```sh
-curl -s https://yourdomain.com/api/auth/me
-# → {"is_admin":false}        (good: the site no longer trusts everyone)
+.venv/bin/python backend/migrate_to_supabase.py
 ```
 
-Then open `https://yourdomain.com/login` in a browser, enter the
-password, and check the edit buttons unlock. On other browsers/devices
-the buttons should stay dimmed with the "Only admin can make changes"
-tooltip.
+This uploads `backend/data/uploads/*` to Storage and loads all topics, entries,
+and posts into Postgres.
 
-If the app refuses to start with
-`RuntimeError: SECRET_KEY must be set when ADMIN_PASSWORD_HASH is configured`,
-that's the built-in safety check — Step 3/4 wasn't applied.
+## 5. Deploy
 
-**Important: login only sticks over HTTPS.** In production mode the
-session cookie is marked `Secure`, so browsers drop it on plain
-`http://` (localhost excepted). Set up HTTPS before testing login on the
-real domain.
+```sh
+vercel --prod
+```
+
+Verify: `curl -s https://yourdomain/api/auth/me` → `{"is_admin":false}`, then
+open `/login`, enter the password, and confirm edit controls unlock. Login only
+sticks over HTTPS (the session cookie is `Secure`); Vercel is HTTPS so this is
+automatic.
 
 ## Changing the password later
 
-1. Repeat Step 2 with the new password → new hash.
-2. Replace `ADMIN_PASSWORD_HASH` wherever you set it in Step 4.
-3. Restart the backend.
+Regenerate `ADMIN_PASSWORD_HASH` (step 2), update it in Vercel, redeploy.
+Already-logged-in devices stay in for up to 30 days; to force everyone out
+(e.g. suspected compromise), also regenerate and replace `SECRET_KEY`.
 
-Already-logged-in devices stay logged in for up to 30 days. If you're
-changing the password because you suspect someone got in, **also**
-repeat Step 3 and replace `SECRET_KEY` — that instantly logs out every
-device, including yours.
+## Notes
+
+- The login rate-limit is in-memory and best-effort on serverless (it resets on
+  cold starts) — acceptable for a single admin.
+- Local dev needs `backend/.env` (see `backend/.env.example`); with
+  `ADMIN_PASSWORD_HASH` unset, every request is admin.
