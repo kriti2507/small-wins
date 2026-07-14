@@ -37,3 +37,45 @@ def test_set_topic_layout_updates(app_ctx):
     assert updated["layout"] == "thumbnail"
     assert db.find_topic("runs")["layout"] == "thumbnail"
     assert db.set_topic_layout("nope", "thumbnail") is None
+
+
+def _seed_runs(db):
+    db.load_topics()  # ensures the "runs" topic exists
+
+
+def test_entry_round_trip_flattens_values(app_ctx):
+    import db
+    _seed_runs(db)
+    assert db.next_entry_id("runs") == 1
+    db.save_entry("runs", {"id": 1, "date": "2026-07-09", "image": None,
+                           "title": "Run", "distance": 5.25})
+    assert db.next_entry_id("runs") == 2
+    got = db.find_entry("runs", 1)
+    assert got == {"id": 1, "date": "2026-07-09", "image": None,
+                   "title": "Run", "distance": 5.25}
+    assert db.load_entries("runs") == [got]
+    assert db.find_entry("runs", 999) is None
+
+
+def test_save_entry_upserts(app_ctx):
+    import db
+    _seed_runs(db)
+    db.save_entry("runs", {"id": 1, "date": "2026-07-09", "image": None, "title": "A"})
+    db.save_entry("runs", {"id": 1, "date": "2026-07-10", "image": None, "title": "B"})
+    assert db.load_entries("runs") == [
+        {"id": 1, "date": "2026-07-10", "image": None, "title": "B"}
+    ]
+
+
+def test_post_round_trip_and_absence(app_ctx):
+    import db
+    _seed_runs(db)
+    db.save_entry("runs", {"id": 1, "date": "2026-07-09", "image": None, "title": "A"})
+    assert db.load_post("runs", 1) is None
+    doc = {"type": "doc", "content": [
+        {"type": "paragraph", "content": [{"type": "text", "text": "hi"}]}]}
+    db.save_post("runs", 1, doc)
+    assert db.load_post("runs", 1) == doc
+    doc2 = {"type": "doc", "content": []}
+    db.save_post("runs", 1, doc2)  # upsert
+    assert db.load_post("runs", 1) == doc2

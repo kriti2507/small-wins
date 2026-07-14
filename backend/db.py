@@ -92,3 +92,66 @@ def set_topic_layout(slug, layout):
         (layout, slug),
     ).fetchone()
     return dict(row) if row else None
+
+
+def _flatten(row):
+    entry = {"id": row["id"], "date": row["date"], "image": row["image"]}
+    entry.update(row["values"] or {})
+    return entry
+
+
+def next_entry_id(slug):
+    conn = get_conn()
+    return conn.execute(
+        "select coalesce(max(id), 0) + 1 as next from entries where topic_slug=%s",
+        (slug,),
+    ).fetchone()["next"]
+
+
+def load_entries(slug):
+    conn = get_conn()
+    rows = conn.execute(
+        'select id, date, image, "values" from entries where topic_slug=%s order by id',
+        (slug,),
+    ).fetchall()
+    return [_flatten(r) for r in rows]
+
+
+def find_entry(slug, entry_id):
+    conn = get_conn()
+    row = conn.execute(
+        'select id, date, image, "values" from entries where topic_slug=%s and id=%s',
+        (slug, entry_id),
+    ).fetchone()
+    return _flatten(row) if row else None
+
+
+def save_entry(slug, entry):
+    values = {k: v for k, v in entry.items()
+              if k not in ("id", "date", "image", "body")}
+    conn = get_conn()
+    conn.execute(
+        'insert into entries (topic_slug, id, date, image, "values") '
+        'values (%s, %s, %s, %s, %s) '
+        'on conflict (topic_slug, id) do update set '
+        'date = excluded.date, image = excluded.image, "values" = excluded."values"',
+        (slug, entry["id"], entry.get("date", ""), entry.get("image"), Jsonb(values)),
+    )
+
+
+def load_post(slug, entry_id):
+    conn = get_conn()
+    row = conn.execute(
+        "select doc from posts where topic_slug=%s and entry_id=%s",
+        (slug, entry_id),
+    ).fetchone()
+    return row["doc"] if row else None
+
+
+def save_post(slug, entry_id, doc):
+    conn = get_conn()
+    conn.execute(
+        "insert into posts (topic_slug, entry_id, doc) values (%s, %s, %s) "
+        "on conflict (topic_slug, entry_id) do update set doc = excluded.doc",
+        (slug, entry_id, Jsonb(doc)),
+    )
