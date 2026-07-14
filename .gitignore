@@ -10,3 +10,5 @@ frontend/dist/
 skills-lock.json
 .claude
 frontend/tsconfig.tsbuildinfo
+.env
+backend/.env
