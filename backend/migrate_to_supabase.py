@@ -12,9 +12,13 @@ import json
 import os
 
 import psycopg
+from dotenv import load_dotenv
 from psycopg.types.json import Jsonb
 
 import storage
+
+# Read DB/storage config from backend/.env, same as app.py.
+load_dotenv(os.path.join(os.path.dirname(__file__), ".env"))
 
 DATA_DIR = os.path.join(os.path.dirname(__file__), "data")
 UPLOADS_DIR = os.path.join(DATA_DIR, "uploads")
