@@ -33,7 +33,7 @@ function presetRange(preset: string): DateRange {
 export default function HomePage() {
   const [topicsData, setTopicsData] = useState<CapsuleTopicData[]>([]);
   const [showForm, setShowForm] = useState(false);
-  const [preset, setPreset] = useState("7");
+  const [preset, setPreset] = useState("30");
   const [customStart, setCustomStart] = useState("");
   const [customEnd, setCustomEnd] = useState("");
 
@@ -75,6 +75,10 @@ export default function HomePage() {
     <>
       <BackgroundDoodles />
       <h1>Small Wins</h1>
+      <p className="intro">
+        A little diary for the good things. Track the small wins across the
+        different parts of your life, and watch each one fill in over time.
+      </p>
 
       <section className="capsule">
         <div className="capsule-head">

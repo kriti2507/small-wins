@@ -61,6 +61,17 @@ h1 {
   text-wrap: balance;
 }
 
+.intro {
+  margin-top: -0.2rem;
+  margin-bottom: 2rem;
+  max-width: 40rem;
+  font-family: var(--font-hand);
+  font-size: 1.55rem;
+  line-height: 1.35;
+  color: var(--ink-muted);
+  text-wrap: balance;
+}
+
 h2,
 h3 {
   font-family: var(--font-display);
