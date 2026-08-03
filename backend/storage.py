@@ -15,6 +15,11 @@ def _cfg():
     )
 
 
+def _public_url_prefix():
+    base, _key, bucket = _cfg()
+    return f"{base}/storage/v1/object/public/{bucket}/"
+
+
 def upload_bytes(name, data, content_type):
     """Upload bytes to the bucket and return the file's public URL."""
     base, key, bucket = _cfg()
@@ -27,4 +32,26 @@ def upload_bytes(name, data, content_type):
     req.add_header("x-upsert", "true")
     with urllib.request.urlopen(req) as resp:
         resp.read()
-    return f"{base}/storage/v1/object/public/{bucket}/{name}"
+    return f"{_public_url_prefix()}{name}"
+
+
+def object_name_for(url):
+    """Return the object key for url if it points at our public bucket, else None."""
+    if not url:
+        return None
+    prefix = _public_url_prefix()
+    if url.startswith(prefix):
+        return url[len(prefix):]
+    return None
+
+
+def delete_object(name):
+    """Delete an object from the bucket. Exceptions propagate to the caller."""
+    base, key, bucket = _cfg()
+    req = urllib.request.Request(
+        f"{base}/storage/v1/object/{bucket}/{name}", method="DELETE"
+    )
+    req.add_header("Authorization", f"Bearer {key}")
+    req.add_header("apikey", key)
+    with urllib.request.urlopen(req) as resp:
+        resp.read()
