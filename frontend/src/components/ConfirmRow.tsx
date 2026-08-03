@@ -4,6 +4,12 @@ interface Props {
   message: string;
   confirmLabel: string;
   cancelLabel: string;
+  // Whether the buttons should be inert — true whenever any conflicting
+  // operation (save, upload, delete) is in flight.
+  disabled: boolean;
+  // Whether the destructive action itself is in flight — drives the label.
+  // Distinct from `disabled`: a save's upload disables this row without a
+  // delete being underway, and the label shouldn't claim otherwise.
   busy: boolean;
   busyLabel: string;
   onConfirm: () => void;
@@ -17,6 +23,7 @@ export default function ConfirmRow({
   message,
   confirmLabel,
   cancelLabel,
+  disabled,
   busy,
   busyLabel,
   onConfirm,
@@ -34,10 +41,10 @@ export default function ConfirmRow({
     <div className="confirm-row" role="alert">
       <p>{message}</p>
       <div className="confirm-actions">
-        <button type="button" className="danger" disabled={busy} onClick={onConfirm}>
+        <button type="button" className="danger" disabled={disabled} onClick={onConfirm}>
           {busy ? busyLabel : confirmLabel}
         </button>
-        <button type="button" disabled={busy} onClick={onCancel} autoFocus>
+        <button type="button" disabled={disabled} onClick={onCancel} autoFocus>
           {cancelLabel}
         </button>
       </div>

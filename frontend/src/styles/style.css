@@ -1015,7 +1015,7 @@ a.back:hover {
 
 .login-error {
   flex-basis: 100%;
-  color: #a4442d;
+  color: var(--danger);
   font-size: 0.85rem;
   margin: 0;
 }

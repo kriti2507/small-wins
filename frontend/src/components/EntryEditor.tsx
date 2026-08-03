@@ -148,7 +148,7 @@ export default function EntryEditor({
           <button
             type="button"
             className="danger toolbar-delete"
-            disabled={saving || deleting}
+            disabled={saving || deleting || submitting || uploading}
             onClick={() => setConfirming(true)}
           >
             Delete
@@ -160,7 +160,8 @@ export default function EntryEditor({
           message="Delete this entry? This can’t be undone."
           confirmLabel="Yes, delete"
           cancelLabel="Keep it"
-          busy={deleting || saving || submitting || uploading}
+          disabled={deleting || saving || submitting || uploading}
+          busy={deleting}
           busyLabel="Deleting…"
           onConfirm={onDelete}
           onCancel={() => setConfirming(false)}
