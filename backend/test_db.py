@@ -96,7 +96,11 @@ def test_delete_entry_removes_row_and_cascades_post(app_ctx):
 def test_delete_entry_is_a_no_op_for_unknown_entry(app_ctx):
     import db
     _seed_runs(db)
-    db.delete_entry("runs", 999)  # must not raise
+    db.save_entry("runs", {"id": 1, "date": "2026-07-09", "image": None, "title": "A"})
+
+    db.delete_entry("runs", 999)  # no matching row in this topic
+
+    assert db.find_entry("runs", 1) is not None  # the real entry survives untouched
 
 
 def test_all_entry_images_excludes_nulls_across_topics(app_ctx):

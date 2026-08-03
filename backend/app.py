@@ -167,13 +167,12 @@ def image_urls_in(doc):
     return urls
 
 
-def referenced_images():
+def referenced_image_urls():
     """Every image URL still referenced anywhere, across all topics: hero
-    images plus in-body figures. Callers deleting an entry must compute this
-    AFTER the row delete, or the entry being removed still counts as a
-    reference and nothing is ever cleaned up.
+    images plus in-body figures. See the call site in delete_entry for the
+    ordering requirement.
     """
-    urls = set(db.all_entry_images())
+    urls = db.all_entry_images()
     for doc in db.all_post_docs():
         urls |= image_urls_in(doc)
     return urls
@@ -354,18 +353,20 @@ def delete_entry(slug, entry_id):
 
     # Only now, with the row already gone, can "is this still referenced?"
     # be answered correctly -- otherwise the entry being deleted would count
-    # as its own reference and nothing would ever be cleaned up.
-    orphaned = candidates - referenced_images()
+    # as its own reference and nothing would ever be cleaned up. Skip the
+    # scan entirely when there's nothing that could possibly be freed.
+    orphaned = candidates - referenced_image_urls() if candidates else set()
     for url in orphaned:
-        name = storage.object_name_for(url)
-        if not name:  # not one of our own objects (or an unsafe key) -- skip
-            continue
+        # The row is already gone; a 500 here would be a lie regardless of
+        # cause, so the whole per-URL body -- including resolving the name,
+        # which can raise on a storage misconfiguration -- is best-effort.
         try:
+            name = storage.object_name_for(url)
+            if not name:  # not one of our own objects (or an unsafe key) -- skip
+                continue
             storage.delete_object(name)
         except Exception as exc:
-            # The row is already gone; a 500 here would be a lie. Best-effort
-            # cleanup, logged so orphaned files can be found later.
-            app.logger.warning("failed to delete storage object %s: %s", name, exc)
+            app.logger.warning("failed to delete storage object for %s: %s", url, exc)
 
     return jsonify({"ok": True})
 

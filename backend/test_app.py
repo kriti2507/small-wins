@@ -303,6 +303,39 @@ def test_delete_entry_keeps_image_still_referenced_by_another_entry(client, monk
     assert client.get(f"/api/topics/runs/entries/{entry2}").get_json()["image"] == shared_url
 
 
+def test_delete_entry_keeps_figure_copied_into_another_post(client, monkeypatch):
+    # TipTap lets you copy a figure node between posts, duplicating its src.
+    # A hero-image share alone (as in the test above) only exercises
+    # db.all_entry_images(); this pins the in-body half of
+    # referenced_image_urls(), across two different topics to also cover
+    # the cross-topic union.
+    _set_storage_env(monkeypatch)
+    deleted = []
+    monkeypatch.setattr(app_module.storage, "delete_object", lambda name: deleted.append(name))
+
+    res = client.post("/api/topics", json={"name": "Books"})
+    assert res.status_code == 201
+
+    shared_url = BUCKET_PREFIX + "copied.jpg"
+    doc = {"type": "doc", "content": [
+        {"type": "figure", "attrs": {"src": shared_url}, "content": []},
+    ]}
+    entry1 = make_entry(client)
+    client.patch(f"/api/topics/runs/entries/{entry1}", json={"body": doc})
+    entry2_res = client.post("/api/topics/books/entries", json={"date": "2026-07-09"})
+    assert entry2_res.status_code == 201
+    entry2 = entry2_res.get_json()["id"]
+    client.patch(f"/api/topics/books/entries/{entry2}", json={"body": doc})
+
+    res = client.delete(f"/api/topics/runs/entries/{entry1}")
+    assert res.status_code == 200
+    assert "copied.jpg" not in deleted
+
+    # the surviving post in the other topic still resolves the shared figure
+    survivor = client.get(f"/api/topics/books/entries/{entry2}").get_json()
+    assert survivor["body"] == doc
+
+
 def test_delete_entry_skips_externally_hosted_image(client, monkeypatch):
     _set_storage_env(monkeypatch)
     deleted = []
