@@ -45,6 +45,15 @@ def make_entry(client):
     return res.get_json()["id"]
 
 
+BUCKET_PREFIX = "https://proj.supabase.co/storage/v1/object/public/uploads/"
+
+
+def _set_storage_env(monkeypatch):
+    monkeypatch.setenv("SUPABASE_URL", "https://proj.supabase.co")
+    monkeypatch.setenv("SUPABASE_SERVICE_KEY", "svc")
+    monkeypatch.setenv("SUPABASE_BUCKET", "uploads")
+
+
 # --- Entry body / fields ----------------------------------------------------
 
 def test_patch_body_round_trip(client):
@@ -168,6 +177,166 @@ def test_unknown_topic_and_entry_404(client):
     assert client.get("/api/topics/runs/entries/999").status_code == 404
 
 
+# --- image_urls_in -----------------------------------------------------------
+
+def test_image_urls_in_handles_none_doc():
+    assert app_module.image_urls_in(None) == set()
+
+
+def test_image_urls_in_returns_empty_for_doc_without_figures():
+    doc = {"type": "doc", "content": [
+        {"type": "paragraph", "content": [{"type": "text", "text": "hi"}]},
+    ]}
+    assert app_module.image_urls_in(doc) == set()
+
+
+def test_image_urls_in_finds_top_level_and_nested_figures():
+    doc = {
+        "type": "doc",
+        "content": [
+            {"type": "figure", "attrs": {"src": "https://x/top.jpg"}, "content": []},
+            {"type": "blockquote", "content": [
+                {"type": "figure", "attrs": {"src": "https://x/quoted.jpg"}, "content": []},
+            ]},
+            {"type": "bulletList", "content": [
+                {"type": "listItem", "content": [
+                    {"type": "paragraph", "content": [{"type": "text", "text": "hi"}]},
+                    {"type": "figure", "attrs": {"src": "https://x/listed.jpg"}, "content": []},
+                ]},
+            ]},
+        ],
+    }
+    assert app_module.image_urls_in(doc) == {
+        "https://x/top.jpg", "https://x/quoted.jpg", "https://x/listed.jpg",
+    }
+
+
+def test_image_urls_in_ignores_missing_or_null_src():
+    doc = {"type": "doc", "content": [
+        {"type": "figure", "content": []},               # no attrs at all
+        {"type": "figure", "attrs": {}, "content": []},   # attrs without src
+        {"type": "figure", "attrs": {"src": None}, "content": []},
+    ]}
+    assert app_module.image_urls_in(doc) == set()
+
+
+def test_image_urls_in_tolerates_missing_or_malformed_content():
+    doc = {"type": "doc", "content": [
+        {"type": "paragraph"},  # no "content" key at all
+        {"type": "figure", "attrs": {"src": "https://x/ok.jpg"}, "content": "not-a-list"},
+    ]}
+    assert app_module.image_urls_in(doc) == {"https://x/ok.jpg"}
+
+
+# --- Delete entry -------------------------------------------------------------
+
+def test_delete_entry_removes_it(client):
+    entry_id = make_entry(client)
+    res = client.delete(f"/api/topics/runs/entries/{entry_id}")
+    assert res.status_code == 200
+    assert res.get_json() == {"ok": True}
+    assert client.get(f"/api/topics/runs/entries/{entry_id}").status_code == 404
+
+
+def test_delete_entry_cascades_the_post_body(client):
+    import db
+    entry_id = make_entry(client)
+    client.patch(f"/api/topics/runs/entries/{entry_id}", json={"body": DOC})
+    assert db.load_post("runs", entry_id) == DOC
+
+    res = client.delete(f"/api/topics/runs/entries/{entry_id}")
+    assert res.status_code == 200
+
+    # Querying the posts table directly (rather than just re-GETting the
+    # entry) proves the FK cascade actually ran the delete, not merely that
+    # the entries row is gone.
+    assert db.load_post("runs", entry_id) is None
+
+
+def test_delete_entry_unknown_topic_404(client):
+    res = client.delete("/api/topics/nope/entries/1")
+    assert res.status_code == 404
+    assert res.get_json()["error"] == "Unknown topic."
+
+
+def test_delete_entry_unknown_entry_404(client):
+    res = client.delete("/api/topics/runs/entries/999")
+    assert res.status_code == 404
+    assert res.get_json()["error"] == "Unknown entry."
+
+
+def test_delete_entry_deletes_hero_and_body_images(client, monkeypatch):
+    _set_storage_env(monkeypatch)
+    deleted = []
+    monkeypatch.setattr(app_module.storage, "delete_object", lambda name: deleted.append(name))
+
+    entry_id = make_entry(client)
+    hero_url = BUCKET_PREFIX + "hero.jpg"
+    client.patch(f"/api/topics/runs/entries/{entry_id}", json={"image": hero_url})
+    body_url = BUCKET_PREFIX + "body.jpg"
+    doc = {"type": "doc", "content": [
+        {"type": "figure", "attrs": {"src": body_url}, "content": []},
+    ]}
+    client.patch(f"/api/topics/runs/entries/{entry_id}", json={"body": doc})
+
+    res = client.delete(f"/api/topics/runs/entries/{entry_id}")
+    assert res.status_code == 200
+    assert set(deleted) == {"hero.jpg", "body.jpg"}
+
+
+def test_delete_entry_keeps_image_still_referenced_by_another_entry(client, monkeypatch):
+    _set_storage_env(monkeypatch)
+    deleted = []
+    monkeypatch.setattr(app_module.storage, "delete_object", lambda name: deleted.append(name))
+
+    shared_url = BUCKET_PREFIX + "shared.jpg"
+    entry1 = make_entry(client)
+    entry2 = make_entry(client)
+    client.patch(f"/api/topics/runs/entries/{entry1}", json={"image": shared_url})
+    client.patch(f"/api/topics/runs/entries/{entry2}", json={"image": shared_url})
+
+    res = client.delete(f"/api/topics/runs/entries/{entry1}")
+    assert res.status_code == 200
+    assert "shared.jpg" not in deleted
+
+    # the surviving entry can still be fetched with its image intact
+    assert client.get(f"/api/topics/runs/entries/{entry2}").get_json()["image"] == shared_url
+
+
+def test_delete_entry_skips_externally_hosted_image(client, monkeypatch):
+    _set_storage_env(monkeypatch)
+    deleted = []
+    monkeypatch.setattr(app_module.storage, "delete_object", lambda name: deleted.append(name))
+
+    entry_id = make_entry(client)
+    external_url = "https://example.com/random/photo.jpg"
+    doc = {"type": "doc", "content": [
+        {"type": "figure", "attrs": {"src": external_url}, "content": []},
+    ]}
+    client.patch(f"/api/topics/runs/entries/{entry_id}", json={"body": doc})
+
+    res = client.delete(f"/api/topics/runs/entries/{entry_id}")
+    assert res.status_code == 200
+    assert deleted == []
+
+
+def test_delete_entry_storage_failure_still_returns_200(client, monkeypatch):
+    _set_storage_env(monkeypatch)
+
+    def boom(name):
+        raise RuntimeError("storage down")
+
+    monkeypatch.setattr(app_module.storage, "delete_object", boom)
+
+    entry_id = make_entry(client)
+    hero_url = BUCKET_PREFIX + "hero.jpg"
+    client.patch(f"/api/topics/runs/entries/{entry_id}", json={"image": hero_url})
+
+    res = client.delete(f"/api/topics/runs/entries/{entry_id}")
+    assert res.status_code == 200
+    assert res.get_json() == {"ok": True}
+
+
 # --- Topics -----------------------------------------------------------------
 
 def test_add_topic_appends_and_is_listed(client):
@@ -254,6 +423,7 @@ def test_writes_locked_out_for_visitors(auth_client):
         ("patch", "/api/topics/runs/entries/1",
          {"json": {"body": {"type": "doc", "content": []}}}),
         ("post", "/api/uploads", {"data": {}}),
+        ("delete", "/api/topics/runs/entries/1", {}),
     ]
     for method, url, kwargs in checks:
         res = getattr(auth_client, method)(url, **kwargs)

@@ -155,3 +155,26 @@ def save_post(slug, entry_id, doc):
         "on conflict (topic_slug, entry_id) do update set doc = excluded.doc",
         (slug, entry_id, Jsonb(doc)),
     )
+
+
+def delete_entry(slug, entry_id):
+    """The posts row (if any) goes with it via the FK's on delete cascade."""
+    conn = get_conn()
+    conn.execute(
+        "delete from entries where topic_slug=%s and id=%s",
+        (slug, entry_id),
+    )
+
+
+def all_entry_images():
+    conn = get_conn()
+    rows = conn.execute(
+        "select image from entries where image is not null"
+    ).fetchall()
+    return {r["image"] for r in rows}
+
+
+def all_post_docs():
+    conn = get_conn()
+    rows = conn.execute("select doc from posts").fetchall()
+    return [r["doc"] for r in rows]

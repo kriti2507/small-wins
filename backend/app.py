@@ -145,6 +145,40 @@ def with_body(slug, entry):
     return out
 
 
+def image_urls_in(doc):
+    """Every attrs.src on a 'figure' node, anywhere in a TipTap doc (figures
+    can nest inside blockquotes, list items, etc. to arbitrary depth).
+    """
+    urls = set()
+
+    def walk(node):
+        if not isinstance(node, dict):
+            return
+        if node.get("type") == "figure":
+            src = (node.get("attrs") or {}).get("src")
+            if src:
+                urls.add(src)
+        content = node.get("content")
+        if isinstance(content, list):
+            for child in content:
+                walk(child)
+
+    walk(doc)
+    return urls
+
+
+def referenced_images():
+    """Every image URL still referenced anywhere, across all topics: hero
+    images plus in-body figures. Callers deleting an entry must compute this
+    AFTER the row delete, or the entry being removed still counts as a
+    reference and nothing is ever cleaned up.
+    """
+    urls = set(db.all_entry_images())
+    for doc in db.all_post_docs():
+        urls |= image_urls_in(doc)
+    return urls
+
+
 # --- Topics API ------------------------------------------------------------
 
 @app.route("/api/topics", methods=["GET"])
@@ -298,6 +332,42 @@ def update_entry(slug, entry_id):
 
     db.save_entry(slug, entry)
     return jsonify(with_body(slug, entry))
+
+
+@app.route("/api/topics/<slug>/entries/<int:entry_id>", methods=["DELETE"])
+@admin_required
+def delete_entry(slug, entry_id):
+    if not db.find_topic(slug):
+        return jsonify({"error": "Unknown topic."}), 404
+
+    entry = db.find_entry(slug, entry_id)
+    if not entry:
+        return jsonify({"error": "Unknown entry."}), 404
+
+    # Gather this entry's images before it's gone, so we know what *might*
+    # become orphaned.
+    candidates = image_urls_in(db.load_post(slug, entry_id))
+    if entry.get("image"):
+        candidates.add(entry["image"])
+
+    db.delete_entry(slug, entry_id)  # posts row cascades with it
+
+    # Only now, with the row already gone, can "is this still referenced?"
+    # be answered correctly -- otherwise the entry being deleted would count
+    # as its own reference and nothing would ever be cleaned up.
+    orphaned = candidates - referenced_images()
+    for url in orphaned:
+        name = storage.object_name_for(url)
+        if not name:  # not one of our own objects (or an unsafe key) -- skip
+            continue
+        try:
+            storage.delete_object(name)
+        except Exception as exc:
+            # The row is already gone; a 500 here would be a lie. Best-effort
+            # cleanup, logged so orphaned files can be found later.
+            app.logger.warning("failed to delete storage object %s: %s", name, exc)
+
+    return jsonify({"ok": True})
 
 
 if __name__ == "__main__":
