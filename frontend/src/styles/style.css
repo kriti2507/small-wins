@@ -11,6 +11,7 @@
   --ink-muted: #8a7a63;
   --ink-faint: #b3a58e;
   --accent: #b3654a;
+  --danger: #a4442d;
   --shadow-tint: 93, 78, 55;
   --font-display: "Fraunces", Georgia, serif;
   --font-body: "Lora", Georgia, serif;
@@ -423,13 +424,13 @@ button.primary,
 }
 
 button.danger {
-  background: none;
-  border-color: #a4442d;
-  color: #a4442d;
+  background: var(--card);
+  border-color: var(--danger);
+  color: var(--danger);
 }
 
 button.danger:hover {
-  background: #a4442d;
+  background: var(--danger);
   color: var(--card);
 }
 
@@ -737,7 +738,7 @@ a.back:hover {
 }
 
 .form-error {
-  color: #a4442d;
+  color: var(--danger);
   font-size: 0.85rem;
   margin: 0;
 }
@@ -795,10 +796,9 @@ a.back:hover {
 /* Delete confirmation — sits below the edit toolbar, not a modal, so it stays
    dismissable with Escape and never blocks the rest of the page. */
 .confirm-row {
-  margin-top: 0.75rem;
   padding: 0.85rem 1rem;
   background: var(--card);
-  border: 1px solid #a4442d;
+  border: 1px solid var(--danger);
   border-radius: 10px;
 }
 

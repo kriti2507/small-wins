@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { useEditor } from "@tiptap/react";
 import type { Topic, Entry, PostDoc } from "../types";
 import type { EntryUpdate } from "../api/client";
@@ -8,6 +8,7 @@ import { postExtensions } from "../lib/tiptap";
 import { toDoc } from "../lib/post";
 import EntryFields from "./EntryFields";
 import PostBody from "./PostBody";
+import ConfirmRow from "./ConfirmRow";
 
 interface Props {
   topic: Topic;
@@ -51,17 +52,6 @@ export default function EntryEditor({
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
   const [confirming, setConfirming] = useState(false);
-
-  // Escape dismisses the delete confirmation, matching how the rest of the
-  // app treats Escape as "back out of this."
-  useEffect(() => {
-    if (!confirming) return;
-    function onKeyDown(e: KeyboardEvent) {
-      if (e.key === "Escape") setConfirming(false);
-    }
-    document.addEventListener("keydown", onKeyDown);
-    return () => document.removeEventListener("keydown", onKeyDown);
-  }, [confirming]);
 
   // The editor initializes its content once; the parent mounts EntryEditor with
   // key={entry.id} so switching entries remounts it with fresh content.
@@ -166,22 +156,15 @@ export default function EntryEditor({
         )}
       </div>
       {confirming && (
-        <div className="confirm-row">
-          <p>Delete this entry? This can&rsquo;t be undone.</p>
-          <div className="confirm-actions">
-            <button
-              type="button"
-              className="danger"
-              disabled={deleting}
-              onClick={onDelete}
-            >
-              {deleting ? "Deleting…" : "Yes, delete"}
-            </button>
-            <button type="button" disabled={deleting} onClick={() => setConfirming(false)}>
-              Keep it
-            </button>
-          </div>
-        </div>
+        <ConfirmRow
+          message="Delete this entry? This can’t be undone."
+          confirmLabel="Yes, delete"
+          cancelLabel="Keep it"
+          busy={deleting || saving || submitting || uploading}
+          busyLabel="Deleting…"
+          onConfirm={onDelete}
+          onCancel={() => setConfirming(false)}
+        />
       )}
     </>
   );
