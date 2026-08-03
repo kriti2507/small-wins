@@ -30,12 +30,14 @@ export default function ConfirmRow({
   onCancel,
 }: Props) {
   useEffect(() => {
+    // Escape honours `disabled` too, so the keyboard can't back out of a row
+    // whose buttons are inert.
     function onKeyDown(e: KeyboardEvent) {
-      if (e.key === "Escape") onCancel();
+      if (e.key === "Escape" && !disabled) onCancel();
     }
     document.addEventListener("keydown", onKeyDown);
     return () => document.removeEventListener("keydown", onKeyDown);
-  }, [onCancel]);
+  }, [onCancel, disabled]);
 
   return (
     <div className="confirm-row" role="alert">
