@@ -63,6 +63,12 @@ export function updateEntry(
   }).then((r) => json<Entry>(r));
 }
 
+export function deleteEntry(slug: string, id: number): Promise<{ ok: boolean }> {
+  return fetch(`/api/topics/${slug}/entries/${id}`, {
+    method: "DELETE",
+  }).then((r) => json<{ ok: boolean }>(r));
+}
+
 export function setTopicLayout(slug: string, layout: string): Promise<Topic> {
   return fetch(`/api/topics/${slug}`, {
     method: "PATCH",

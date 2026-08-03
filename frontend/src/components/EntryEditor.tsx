@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useEditor } from "@tiptap/react";
 import type { Topic, Entry, PostDoc } from "../types";
 import type { EntryUpdate } from "../api/client";
@@ -15,6 +15,8 @@ interface Props {
   saving: boolean;
   onSave: (payload: EntryUpdate) => void;
   onCancel: () => void;
+  onDelete: () => void;
+  deleting: boolean;
 }
 
 function initialValues(topic: Topic, entry: Entry): Record<string, string> {
@@ -30,7 +32,15 @@ function initialValues(topic: Topic, entry: Entry): Record<string, string> {
 
 // Combined edit view: topic fields + date + title image + post body, saved
 // together with one Save.
-export default function EntryEditor({ topic, entry, saving, onSave, onCancel }: Props) {
+export default function EntryEditor({
+  topic,
+  entry,
+  saving,
+  onSave,
+  onCancel,
+  onDelete,
+  deleting,
+}: Props) {
   const [values, setValues] = useState<Record<string, string>>(() =>
     initialValues(topic, entry),
   );
@@ -40,6 +50,18 @@ export default function EntryEditor({ topic, entry, saving, onSave, onCancel }: 
   const [uploading, setUploading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
+  const [confirming, setConfirming] = useState(false);
+
+  // Escape dismisses the delete confirmation, matching how the rest of the
+  // app treats Escape as "back out of this."
+  useEffect(() => {
+    if (!confirming) return;
+    function onKeyDown(e: KeyboardEvent) {
+      if (e.key === "Escape") setConfirming(false);
+    }
+    document.addEventListener("keydown", onKeyDown);
+    return () => document.removeEventListener("keydown", onKeyDown);
+  }, [confirming]);
 
   // The editor initializes its content once; the parent mounts EntryEditor with
   // key={entry.id} so switching entries remounts it with fresh content.
@@ -124,15 +146,43 @@ export default function EntryEditor({ topic, entry, saving, onSave, onCancel }: 
         <button
           type="button"
           className="primary"
-          disabled={saving || uploading || submitting || !editor}
+          disabled={saving || uploading || submitting || deleting || !editor}
           onClick={handleSave}
         >
           {saving ? "Saving…" : uploading ? "Uploading…" : "Save"}
         </button>
-        <button type="button" onClick={onCancel} disabled={saving}>
+        <button type="button" onClick={onCancel} disabled={saving || deleting}>
           Cancel
         </button>
+        {!confirming && (
+          <button
+            type="button"
+            className="danger toolbar-delete"
+            disabled={saving || deleting}
+            onClick={() => setConfirming(true)}
+          >
+            Delete
+          </button>
+        )}
       </div>
+      {confirming && (
+        <div className="confirm-row">
+          <p>Delete this entry? This can&rsquo;t be undone.</p>
+          <div className="confirm-actions">
+            <button
+              type="button"
+              className="danger"
+              disabled={deleting}
+              onClick={onDelete}
+            >
+              {deleting ? "Deleting…" : "Yes, delete"}
+            </button>
+            <button type="button" disabled={deleting} onClick={() => setConfirming(false)}>
+              Keep it
+            </button>
+          </div>
+        </div>
+      )}
     </>
   );
 }

@@ -422,6 +422,21 @@ button.primary,
   color: var(--card);
 }
 
+button.danger {
+  background: none;
+  border-color: #a4442d;
+  color: #a4442d;
+}
+
+button.danger:hover {
+  background: #a4442d;
+  color: var(--card);
+}
+
+.toolbar-delete {
+  margin-left: auto;
+}
+
 /* Runs page */
 .summary-box {
   background: var(--card);
@@ -775,6 +790,26 @@ a.back:hover {
   color: var(--ink-muted);
   font-family: var(--font-hand);
   font-size: 1.2rem;
+}
+
+/* Delete confirmation — sits below the edit toolbar, not a modal, so it stays
+   dismissable with Escape and never blocks the rest of the page. */
+.confirm-row {
+  margin-top: 0.75rem;
+  padding: 0.85rem 1rem;
+  background: var(--card);
+  border: 1px solid #a4442d;
+  border-radius: 10px;
+}
+
+.confirm-row p {
+  margin: 0 0 0.6rem;
+  color: var(--ink);
+}
+
+.confirm-actions {
+  display: flex;
+  gap: 0.5rem;
 }
 
 /* Article reading view */

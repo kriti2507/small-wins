@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
-import { Link, useParams } from "react-router-dom";
+import { Link, useNavigate, useParams } from "react-router-dom";
 import type { Topic, Entry } from "../types";
-import { getTopics, getEntry, updateEntry } from "../api/client";
+import { getTopics, getEntry, updateEntry, deleteEntry } from "../api/client";
 import type { EntryUpdate } from "../api/client";
 import { buttonColorFor } from "../lib/palette";
 import { tileModel } from "../lib/tile";
@@ -14,12 +14,14 @@ import { useAuth } from "../auth";
 export default function EntryPage() {
   const { slug = "", id = "" } = useParams();
   const entryId = Number(id);
+  const navigate = useNavigate();
   const { isAdmin } = useAuth();
   const [topic, setTopic] = useState<Topic | null>(null);
   const [entry, setEntry] = useState<Entry | null>(null);
   const [notFound, setNotFound] = useState(false);
   const [editing, setEditing] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [deleting, setDeleting] = useState(false);
 
   // PostView rebuilds its TipTap instance when this reference changes, so
   // convert once per entry, not once per render.
@@ -64,6 +66,16 @@ export default function EntryPage() {
       .finally(() => setSaving(false));
   }
 
+  function remove() {
+    setDeleting(true);
+    deleteEntry(slug, entryId)
+      .then(() => navigate(`/topic/${slug}`, { replace: true }))
+      .catch((err) => {
+        alert(err.message || "Could not delete.");
+        setDeleting(false);
+      });
+  }
+
   if (notFound) {
     return (
       <>
@@ -93,6 +105,8 @@ export default function EntryPage() {
             saving={saving}
             onSave={save}
             onCancel={() => setEditing(false)}
+            onDelete={remove}
+            deleting={deleting}
           />
         ) : (
           <>
