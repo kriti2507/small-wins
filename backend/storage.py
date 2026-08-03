@@ -36,13 +36,23 @@ def upload_bytes(name, data, content_type):
 
 
 def object_name_for(url):
-    """Return the object key for url if it points at our public bucket, else None."""
+    """Return the object key for url if it points at our public bucket, else None.
+
+    Never let a URL we didn't mint become a delete against our bucket.
+    """
     if not url:
         return None
     prefix = _public_url_prefix()
-    if url.startswith(prefix):
-        return url[len(prefix):]
-    return None
+    if not url.startswith(prefix):
+        return None
+    name = url[len(prefix):]
+    # The prefix check only proves where the URL came from; this proves the key
+    # can't climb out of the bucket. urllib sends ".." unnormalized and Supabase's
+    # edge collapses it. Our own keys are uuid4().hex + ext, so this rejects
+    # nothing we mint.
+    if not name or ".." in name or any(c in name for c in "%?#"):
+        return None
+    return name
 
 
 def delete_object(name):
