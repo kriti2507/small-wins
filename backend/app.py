@@ -19,7 +19,9 @@ load_dotenv(os.path.join(os.path.dirname(__file__), ".env"))
 # API only: the React frontend is served separately (Vite in dev, Vercel static
 # in prod). This app exposes just the /api/* contract.
 app = Flask(__name__, static_folder=None)
-app.config["MAX_CONTENT_LENGTH"] = 5 * 1024 * 1024  # 5 MB per upload
+# Caps JSON request bodies. Image bytes no longer come through here at all —
+# see sign_upload — so this sits well above anything a real request sends.
+app.config["MAX_CONTENT_LENGTH"] = 5 * 1024 * 1024
 
 # --- Auth ------------------------------------------------------------------
 # Single-admin auth. If ADMIN_PASSWORD_HASH is unset (local dev), every request
@@ -119,6 +121,7 @@ LAYOUTS = ("photo-top", "thumbnail")
 
 ALLOWED_EXT = {"png", "jpg", "jpeg", "gif", "webp"}
 MAX_BODY_BYTES = 1_000_000  # serialized cap; well under the 5 MB request limit
+UPLOAD_URL_TTL_SECONDS = 600  # long enough to upload a photo on a slow phone
 
 import re  # noqa: E402  (kept next to its only user)
 
@@ -239,18 +242,35 @@ def update_topic(slug):
 
 # --- Uploads API -----------------------------------------------------------
 
-@app.route("/api/uploads", methods=["POST"])
+@app.route("/api/uploads/sign", methods=["POST"])
 @admin_required
-def upload_file():
-    file = request.files.get("file")
-    if not file or not file.filename:
-        return jsonify({"error": "No file provided."}), 400
-    ext = file.filename.rsplit(".", 1)[-1].lower() if "." in file.filename else ""
+def sign_upload():
+    """Hand the browser a URL to upload one image straight to Supabase.
+
+    The bytes deliberately skip this server: Vercel caps a function's request
+    body at 4.5 MB (a hard platform limit, below a typical phone photo), so a
+    multipart upload through here 413s at the edge before Flask ever runs.
+
+    We mint the key rather than trusting the client's filename, which keeps
+    the object inside the bucket and lets object_name_for reclaim it later.
+    """
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        data = {}
+    ext = str(data.get("ext") or "").lower().lstrip(".")
     if ext not in ALLOWED_EXT:
         return jsonify({"error": "Unsupported file type."}), 400
+
     name = f"{uuid.uuid4().hex}.{ext}"
-    url = storage.upload_bytes(name, file.read(), file.mimetype or "application/octet-stream")
-    return jsonify({"url": url}), 201
+    try:
+        upload_url = storage.signed_upload_url(name, UPLOAD_URL_TTL_SECONDS)
+    except Exception:
+        # Never let this become Flask's HTML 500 page: the client parses every
+        # response as JSON, so an HTML body surfaces as a parser error.
+        app.logger.exception("could not sign an upload URL")
+        return jsonify({"error": "Could not start the upload. Try again."}), 502
+
+    return jsonify({"upload_url": upload_url, "url": storage.public_url_for(name)}), 201
 
 
 # --- Entries API -----------------------------------------------------------

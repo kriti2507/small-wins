@@ -11,8 +11,11 @@ def storage_env(monkeypatch):
 
 
 class FakeResp:
+    def __init__(self, body=b""):
+        self._body = body
+
     def read(self):
-        return b""
+        return self._body
 
     def __enter__(self):
         return self
@@ -60,6 +63,55 @@ def test_delete_object_issues_delete_with_auth_headers(monkeypatch):
     assert calls["method"] == "DELETE"
     assert calls["auth"] == "Bearer svc"
     assert calls["apikey"] == "svc"
+
+
+def test_signed_upload_url_absolutizes_the_relative_url_supabase_returns(monkeypatch):
+    calls = {}
+
+    def fake_urlopen(req):
+        calls["url"] = req.full_url
+        calls["method"] = req.get_method()
+        calls["auth"] = req.get_header("Authorization")
+        calls["apikey"] = req.get_header("Apikey")
+        calls["data"] = req.data
+        return FakeResp(
+            b'{"url": "/object/upload/sign/uploads/abc.png?token=eyJhbG"}'
+        )
+
+    monkeypatch.setattr(storage.urllib.request, "urlopen", fake_urlopen)
+
+    url = storage.signed_upload_url("abc.png", expires_in=600)
+
+    assert calls["url"] == (
+        "https://proj.supabase.co/storage/v1/object/upload/sign/uploads/abc.png"
+    )
+    assert calls["method"] == "POST"
+    assert calls["auth"] == "Bearer svc"
+    assert calls["apikey"] == "svc"
+    assert calls["data"] == b'{"expiresIn": 600}'
+    # Supabase returns a path relative to /storage/v1; the browser needs it whole.
+    assert url == (
+        "https://proj.supabase.co/storage/v1"
+        "/object/upload/sign/uploads/abc.png?token=eyJhbG"
+    )
+
+
+def test_signed_upload_url_rejects_a_response_without_a_url(monkeypatch):
+    monkeypatch.setattr(storage.urllib.request, "urlopen",
+                        lambda req: FakeResp(b'{"error": "Bucket not found"}'))
+    with pytest.raises(KeyError):
+        storage.signed_upload_url("abc.png")
+
+
+def test_public_url_for_matches_what_upload_bytes_returns(monkeypatch):
+    monkeypatch.setattr(storage.urllib.request, "urlopen", lambda req: FakeResp())
+    assert storage.public_url_for("abc.png") == storage.upload_bytes(
+        "abc.png", b"x", "image/png"
+    )
+
+
+def test_public_url_for_round_trips_through_object_name_for():
+    assert storage.object_name_for(storage.public_url_for("abc.png")) == "abc.png"
 
 
 def test_object_name_for_returns_key_for_matching_bucket_url():

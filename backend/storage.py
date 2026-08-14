@@ -2,7 +2,12 @@
 
 Uses only the standard library (urllib) to keep the serverless cold start
 small — no Supabase SDK. The service-role key is server-side only.
+
+Browser uploads go straight to Supabase via signed_upload_url: a Vercel
+function's request body is capped at 4.5 MB, which an ordinary phone photo
+exceeds, so image bytes must never pass through our own server.
 """
+import json
 import os
 import urllib.request
 
@@ -20,8 +25,39 @@ def _public_url_prefix():
     return f"{base}/storage/v1/object/public/{bucket}/"
 
 
+def public_url_for(name):
+    """The URL an uploaded object will be readable at, known before it exists."""
+    return f"{_public_url_prefix()}{name}"
+
+
+def signed_upload_url(name, expires_in=600):
+    """Mint a single-use URL the browser can upload `name` to directly.
+
+    The caller picks the key, so the public URL is knowable up front and stays
+    within the bucket — object_name_for can still recognise it later.
+    """
+    base, key, bucket = _cfg()
+    req = urllib.request.Request(
+        f"{base}/storage/v1/object/upload/sign/{bucket}/{name}",
+        data=json.dumps({"expiresIn": expires_in}).encode(),
+        method="POST",
+    )
+    req.add_header("Authorization", f"Bearer {key}")
+    req.add_header("apikey", key)
+    req.add_header("Content-Type", "application/json")
+    with urllib.request.urlopen(req) as resp:
+        payload = json.loads(resp.read())
+    # Supabase answers with a path relative to /storage/v1; the browser needs
+    # the whole thing. A missing "url" means the sign failed — let it raise.
+    return f"{base}/storage/v1{payload['url']}"
+
+
 def upload_bytes(name, data, content_type):
-    """Upload bytes to the bucket and return the file's public URL."""
+    """Upload bytes to the bucket and return the file's public URL.
+
+    Server-side path, used by the one-off migration script. Browser uploads
+    use signed_upload_url instead.
+    """
     base, key, bucket = _cfg()
     req = urllib.request.Request(
         f"{base}/storage/v1/object/{bucket}/{name}", data=data, method="POST"
@@ -32,7 +68,7 @@ def upload_bytes(name, data, content_type):
     req.add_header("x-upsert", "true")
     with urllib.request.urlopen(req) as resp:
         resp.read()
-    return f"{_public_url_prefix()}{name}"
+    return public_url_for(name)
 
 
 def object_name_for(url):

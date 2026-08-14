@@ -1,3 +1,4 @@
+import urllib.error
 from io import BytesIO
 
 import pytest
@@ -14,6 +15,16 @@ def client(test_db, monkeypatch):
     # test_db (conftest) points db.py at the test database and truncates tables.
     monkeypatch.setattr(app_module, "ADMIN_PASSWORD_HASH", None, raising=False)
     monkeypatch.setattr(app_module, "LOGIN_ATTEMPTS", {}, raising=False)
+    app_module.app.config["TESTING"] = True
+    app_module.app.config["SESSION_COOKIE_SECURE"] = False
+    return app_module.app.test_client()
+
+
+@pytest.fixture()
+def no_db_client(monkeypatch):
+    """Client for endpoints that never touch the database, so these still run
+    without TEST_DATABASE_URL configured."""
+    monkeypatch.setattr(app_module, "ADMIN_PASSWORD_HASH", None, raising=False)
     app_module.app.config["TESTING"] = True
     app_module.app.config["SESSION_COOKIE_SECURE"] = False
     return app_module.app.test_client()
@@ -396,16 +407,86 @@ def test_set_topic_layout(client):
 
 # --- Uploads ----------------------------------------------------------------
 
-def test_upload_returns_storage_url(client, monkeypatch):
-    monkeypatch.setattr(app_module.storage, "upload_bytes",
-                        lambda name, data, ctype: f"https://cdn/{name}")
-    res = client.post(
-        "/api/uploads",
-        data={"file": (BytesIO(b"x"), "photo.png")},
-        content_type="multipart/form-data",
-    )
+def sign_ok(monkeypatch, seen=None):
+    """Stub the Supabase signing call, recording the key it was asked to sign."""
+    _set_storage_env(monkeypatch)
+
+    def fake(name, expires_in=None):
+        if seen is not None:
+            seen.append(name)
+        return f"https://proj.supabase.co/storage/v1/object/upload/sign/uploads/{name}?token=t"
+    monkeypatch.setattr(app_module.storage, "signed_upload_url", fake)
+
+
+def test_sign_upload_returns_an_upload_url_and_the_eventual_public_url(no_db_client, monkeypatch):
+    keys = []
+    sign_ok(monkeypatch, keys)
+
+    res = no_db_client.post("/api/uploads/sign", json={"ext": "png"})
+
     assert res.status_code == 201
-    assert res.get_json()["url"].startswith("https://cdn/")
+    body = res.get_json()
+    assert body["upload_url"].startswith(
+        "https://proj.supabase.co/storage/v1/object/upload/sign/uploads/"
+    )
+    # The key is minted server-side, so the public URL is knowable before the
+    # browser has uploaded anything.
+    assert len(keys) == 1
+    assert body["url"] == BUCKET_PREFIX + keys[0]
+    assert keys[0].endswith(".png")
+
+
+def test_sign_upload_ignores_a_client_supplied_key(no_db_client, monkeypatch):
+    keys = []
+    sign_ok(monkeypatch, keys)
+
+    res = no_db_client.post("/api/uploads/sign",
+                      json={"ext": "png", "name": "../../etc/passwd"})
+
+    assert res.status_code == 201
+    assert keys[0] != "../../etc/passwd"
+    assert ".." not in keys[0]
+    # Whatever we mint must round-trip, or orphan cleanup can never delete it.
+    assert app_module.storage.object_name_for(res.get_json()["url"]) == keys[0]
+
+
+@pytest.mark.parametrize("ext", ["heic", "svg", "exe", "", "png.exe", "PNG/../x"])
+def test_sign_upload_rejects_unsupported_extensions(no_db_client, monkeypatch, ext):
+    sign_ok(monkeypatch)
+    res = no_db_client.post("/api/uploads/sign", json={"ext": ext})
+    assert res.status_code == 400
+    assert res.get_json()["error"] == "Unsupported file type."
+
+
+def test_sign_upload_normalises_extension_case_and_leading_dot(no_db_client, monkeypatch):
+    keys = []
+    sign_ok(monkeypatch, keys)
+    res = no_db_client.post("/api/uploads/sign", json={"ext": ".JPG"})
+    assert res.status_code == 201
+    assert keys[0].endswith(".jpg")
+
+
+def test_sign_upload_rejects_malformed_payloads_as_json(no_db_client, monkeypatch):
+    sign_ok(monkeypatch)
+    bad = [("[1, 2]", "application/json"), ("null", "application/json"),
+           ("not json", "text/plain"), ("", "application/json")]
+    for body, ctype in bad:
+        res = no_db_client.post("/api/uploads/sign", data=body, content_type=ctype)
+        assert res.status_code == 400, f"{body!r} -> {res.status_code}"
+        assert res.headers["Content-Type"].startswith("application/json")
+
+
+def test_sign_upload_reports_storage_failure_as_json_not_html(no_db_client, monkeypatch):
+    def boom(name, expires_in=None):
+        raise urllib.error.HTTPError("u", 400, "Bad Request", {}, BytesIO(b"nope"))
+    monkeypatch.setattr(app_module.storage, "signed_upload_url", boom)
+
+    res = no_db_client.post("/api/uploads/sign", json={"ext": "png"})
+
+    # A 500 HTML page here is unparseable by the client; it must stay JSON.
+    assert res.status_code == 502
+    assert res.headers["Content-Type"].startswith("application/json")
+    assert res.get_json()["error"]
 
 
 # --- Auth -------------------------------------------------------------------
@@ -455,7 +536,7 @@ def test_writes_locked_out_for_visitors(auth_client):
         ("post", "/api/topics/runs/entries", {"json": {"date": "2026-07-10"}}),
         ("patch", "/api/topics/runs/entries/1",
          {"json": {"body": {"type": "doc", "content": []}}}),
-        ("post", "/api/uploads", {"data": {}}),
+        ("post", "/api/uploads/sign", {"json": {"ext": "png"}}),
         ("delete", "/api/topics/runs/entries/1", {}),
     ]
     for method, url, kwargs in checks:

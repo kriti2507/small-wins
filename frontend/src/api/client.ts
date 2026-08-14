@@ -1,12 +1,43 @@
 import type { Topic, Entry, PostDoc } from "../types";
+import { prepareImage } from "../lib/image";
 
-async function json<T>(res: Response): Promise<T> {
-  const data = await res.json();
+/** A readable message for a response that carried no JSON error of its own. */
+export function httpErrorMessage(status: number, statusText = ""): string {
+  if (status === 413) return "That file is too large to upload.";
+  if (status === 401 || status === 403) return "Sign in as admin to make changes.";
+  if (status === 0) return "Could not reach the server.";
+  return `Request failed (${status}${statusText ? ` ${statusText}` : ""}).`;
+}
+
+/** Parse a JSON response, tolerating replies that aren't JSON at all.
+ *
+ * Errors raised before our own code runs — Vercel's plain-text 413, a proxy's
+ * HTML 502 — used to reach the user as a JSON parser message. Anything
+ * unparseable is reported by status instead.
+ */
+export async function readJson<T>(res: {
+  ok: boolean;
+  status: number;
+  statusText?: string;
+  text: () => Promise<string>;
+}): Promise<T> {
+  const text = await res.text();
+  let data: unknown = null;
+  if (text) {
+    try {
+      data = JSON.parse(text);
+    } catch {
+      data = null;
+    }
+  }
   if (!res.ok) {
-    throw new Error((data && data.error) || "Request failed");
+    const fromApi = (data as { error?: string } | null)?.error;
+    throw new Error(fromApi || httpErrorMessage(res.status, res.statusText));
   }
   return data as T;
 }
+
+const json = readJson;
 
 export function getTopics(): Promise<Topic[]> {
   return fetch("/api/topics").then((r) => json<Topic[]>(r));
@@ -77,12 +108,31 @@ export function setTopicLayout(slug: string, layout: string): Promise<Topic> {
   }).then((r) => json<Topic>(r));
 }
 
-export function uploadImage(file: File): Promise<{ url: string }> {
-  const form = new FormData();
-  form.append("file", file);
-  return fetch("/api/uploads", { method: "POST", body: form }).then((r) =>
-    json<{ url: string }>(r),
-  );
+/** Upload an image and return the URL it will be served from.
+ *
+ * The bytes go from the browser straight to Supabase Storage. Routing them
+ * through our own API instead would 413 at Vercel's edge, which caps a
+ * function's request body at 4.5 MB — below an ordinary phone photo.
+ */
+export async function uploadImage(file: File): Promise<{ url: string }> {
+  const { blob, ext } = await prepareImage(file);
+
+  const { upload_url, url } = await fetch("/api/uploads/sign", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ ext }),
+  }).then((r) => json<{ upload_url: string; url: string }>(r));
+
+  const res = await fetch(upload_url, {
+    method: "PUT",
+    headers: { "Content-Type": blob.type || "application/octet-stream" },
+    body: blob,
+  });
+  if (!res.ok) {
+    throw new Error(httpErrorMessage(res.status, res.statusText));
+  }
+
+  return { url };
 }
 
 export interface AuthState {
