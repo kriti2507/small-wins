@@ -304,6 +304,15 @@ h3 {
 }
 
 /* Contribution graph (topic page) — journal-style day grid */
+/* Scrolls sideways when the grid is wider than the card (phones). The padding
+   leaves room for a cell's hover scale, which the overflow would otherwise
+   clip; the matching negative margin keeps the grid where it was. */
+.contrib-scroll {
+  overflow-x: auto;
+  padding: 3px;
+  margin: -3px;
+}
+
 .contrib-months {
   display: grid;
   grid-auto-flow: column;

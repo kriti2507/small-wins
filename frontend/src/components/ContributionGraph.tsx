@@ -1,3 +1,4 @@
+import { useLayoutEffect, useRef } from "react";
 import type { Topic, Entry, DateRange } from "../types";
 import { scoreEntries } from "../lib/scoring";
 import { rampFor, scoreToColor } from "../lib/palette";
@@ -17,6 +18,14 @@ interface Props {
 // top to bottom) flowing left->right. A day's shade is the average score of
 // that day's entries; days with no entry are a faint neutral.
 export default function ContributionGraph({ topic, entries, colorIndex, range }: Props) {
+  // On narrow screens the grid scrolls sideways; start at the right edge so
+  // the most recent weeks are what's visible, with older ones a swipe back.
+  const scrollRef = useRef<HTMLDivElement>(null);
+  useLayoutEffect(() => {
+    const el = scrollRef.current;
+    if (el) el.scrollLeft = el.scrollWidth;
+  }, [range.start, range.end, entries.length]);
+
   if (entries.length === 0) {
     return <p className="empty">No entries yet. Add one to see your summary.</p>;
   }
@@ -62,7 +71,7 @@ export default function ContributionGraph({ topic, entries, colorIndex, range }:
   }
 
   return (
-    <>
+    <div className="contrib-scroll" ref={scrollRef}>
       <div className="contrib-months">
         {monthSlots.map((label, i) => (
           <span key={i}>{label}</span>
@@ -98,6 +107,6 @@ export default function ContributionGraph({ topic, entries, colorIndex, range }:
           );
         })}
       </div>
-    </>
+    </div>
   );
 }
