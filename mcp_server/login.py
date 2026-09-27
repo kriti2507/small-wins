@@ -42,11 +42,12 @@ def record_failure(ip):
 
 
 def destination(redirect_uri):
-    """What to show as 'you'll be sent to': the host, or the app scheme."""
+    """What to show as 'you'll be sent to': the web host, or else the whole
+    URI, since an app scheme can still hand a web address to a browser."""
     parts = urlsplit(redirect_uri)
     if parts.scheme in ("http", "https"):
         return parts.hostname or redirect_uri
-    return f"the {parts.scheme} app"
+    return redirect_uri
 
 
 def render(pending, req, error=None, status=200):

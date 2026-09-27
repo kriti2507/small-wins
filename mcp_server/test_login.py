@@ -46,7 +46,8 @@ def test_page_shows_where_you_will_be_sent(client, provider):
 
 def test_app_schemes_are_named_as_apps(client, provider):
     res = client.get("/oauth/login", params={"req": pending_req(provider, redirect="cursor://x/oauth/callback")})
-    assert "<strong>the cursor app</strong>" in res.text
+    # The whole URI, not just "the cursor app": some schemes hand a web address to a browser.
+    assert "<strong>cursor://x/oauth/callback</strong>" in res.text
 
 
 def test_client_name_is_escaped(client, provider):

@@ -27,8 +27,12 @@ CODE_TTL = 5 * 60
 ACCESS_TTL = 60 * 60
 REFRESH_TTL = 30 * 24 * 60 * 60
 LOOPBACK_HOSTS = {"localhost", "127.0.0.1", "::1"}
-# Schemes a browser would run or load instead of handing to an app.
-BLOCKED_SCHEMES = {"javascript", "data", "file", "vbscript", "about", "blob", "ftp", "ws", "wss"}
+# Schemes a browser would run or load instead of handing to an app, and
+# "app" schemes that just open a web address in a browser.
+BLOCKED_SCHEMES = {
+    "javascript", "data", "file", "vbscript", "about", "blob", "ftp", "ws", "wss",
+    "intent", "x-safari-http", "x-safari-https", "microsoft-edge", "googlechrome", "googlechromes",
+}
 
 
 def redirect_uri_allowed(uri):

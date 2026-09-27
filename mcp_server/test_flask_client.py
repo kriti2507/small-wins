@@ -65,3 +65,14 @@ async def test_get_topic_finds_by_slug_or_says_how_to_recover():
     assert (await c.get_topic("runs")) == {"slug": "runs"}
     with pytest.raises(SmallWinsError, match="list_topics"):
         await c.get_topic("hikes")
+
+
+async def test_slugs_cannot_escape_the_entries_path():
+    paths = []
+
+    def handler(request):
+        paths.append(request.url.raw_path.decode())
+        return httpx.Response(200, json=[])
+
+    await client_for(handler).list_entries("../auth/me#")
+    assert paths == ["/api/topics/..%2Fauth%2Fme%23/entries"]

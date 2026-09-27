@@ -1,7 +1,14 @@
 """Talks to the Small Wins Flask API. The MCP server never touches the
 database; everything goes through these calls, so the API's rules apply."""
+from urllib.parse import quote
+
 import httpx
 from mcp.server.mcpserver.exceptions import ToolError
+
+
+def entries_path(slug):
+    # Escaped so a slug like "../auth" can't reach other API routes.
+    return f"/api/topics/{quote(slug, safe='')}/entries"
 
 
 class SmallWinsError(ToolError):
@@ -45,13 +52,13 @@ class FlaskClient:
         raise SmallWinsError(f"Unknown topic '{slug}'. Call list_topics to see the valid slugs.")
 
     async def list_entries(self, slug):
-        return await self._request("GET", f"/api/topics/{slug}/entries")
+        return await self._request("GET", entries_path(slug))
 
     async def get_entry(self, slug, entry_id):
-        return await self._request("GET", f"/api/topics/{slug}/entries/{entry_id}")
+        return await self._request("GET", f"{entries_path(slug)}/{entry_id}")
 
     async def add_entry(self, slug, payload):
-        return await self._request("POST", f"/api/topics/{slug}/entries", json=payload)
+        return await self._request("POST", entries_path(slug), json=payload)
 
     async def update_entry(self, slug, entry_id, payload):
-        return await self._request("PATCH", f"/api/topics/{slug}/entries/{entry_id}", json=payload)
+        return await self._request("PATCH", f"{entries_path(slug)}/{entry_id}", json=payload)

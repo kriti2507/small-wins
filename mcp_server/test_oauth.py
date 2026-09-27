@@ -51,6 +51,11 @@ async def registered(provider, **kwargs):
     ("http://127.0.0.1:33418/", True),
     ("http://[::1]:8080/cb", True),
     ("cursor://anysphere.cursor-mcp/oauth/callback", True),
+    # App schemes that just open a web page in a browser.
+    ("intent://evil.example.com/cb#Intent;scheme=https;end", False),
+    ("x-safari-https://evil.example.com/cb", False),
+    ("microsoft-edge:https://evil.example.com/cb", False),
+    ("googlechromes://evil.example.com/cb", False),
     ("http://evil.example.com/cb", False),
     ("javascript:alert(1)", False),
     ("data:text/html,hi", False),
