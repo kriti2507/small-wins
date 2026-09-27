@@ -569,3 +569,39 @@ def test_login_rate_limited_after_five_failures(auth_client):
         assert log_in(auth_client, "wrong").status_code == 401
     assert log_in(auth_client, "wrong").status_code == 429
     assert log_in(auth_client).status_code == 429
+
+
+# --- MCP service token --------------------------------------------------------
+
+@pytest.fixture()
+def locked_client(no_db_client, monkeypatch):
+    """Auth switched on and no session: only the MCP service token gets in."""
+    monkeypatch.setattr(app_module, "ADMIN_PASSWORD_HASH", TEST_HASH)
+    monkeypatch.setattr(app_module, "MCP_SERVICE_TOKEN", "svc-token", raising=False)
+    return no_db_client
+
+
+def sign_bad_ext(c, headers=None):
+    # sign_upload rejects .exe with 400 only after the admin check passes, so
+    # the status says which side of the check we landed on, with no DB needed.
+    return c.post("/api/uploads/sign", json={"ext": "exe"}, headers=headers or {})
+
+
+def test_service_token_grants_admin(locked_client):
+    assert sign_bad_ext(locked_client, {"Authorization": "Bearer svc-token"}).status_code == 400
+
+
+def test_wrong_or_malformed_service_token_is_refused(locked_client):
+    for headers in (
+        {},
+        {"Authorization": "Bearer nope"},
+        {"Authorization": "svc-token"},
+        {"Authorization": "Basic svc-token"},
+    ):
+        assert sign_bad_ext(locked_client, headers).status_code == 403, headers
+
+
+def test_service_token_ignored_when_unset(locked_client, monkeypatch):
+    monkeypatch.setattr(app_module, "MCP_SERVICE_TOKEN", None)
+    assert sign_bad_ext(locked_client, {"Authorization": "Bearer "}).status_code == 403
+    assert sign_bad_ext(locked_client, {"Authorization": "Bearer None"}).status_code == 403

@@ -1,3 +1,4 @@
+import hmac
 import json
 import os
 import time
@@ -30,6 +31,10 @@ ADMIN_PASSWORD_HASH = os.environ.get("ADMIN_PASSWORD_HASH")
 app.secret_key = os.environ.get("SECRET_KEY", "dev-only-not-secret")
 if ADMIN_PASSWORD_HASH and app.secret_key == "dev-only-not-secret":
     raise RuntimeError("SECRET_KEY must be set when ADMIN_PASSWORD_HASH is configured")
+
+# Lets the MCP server (mcp_server/, a separate Vercel function) make admin
+# changes. Unset means only the session cookie counts.
+MCP_SERVICE_TOKEN = os.environ.get("MCP_SERVICE_TOKEN")
 app.permanent_session_lifetime = timedelta(days=30)
 app.config["SESSION_COOKIE_HTTPONLY"] = True
 app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
@@ -56,8 +61,15 @@ def _close_db(exc):
         conn.close()
 
 
+def has_service_token():
+    if not MCP_SERVICE_TOKEN:
+        return False
+    scheme, _, token = request.headers.get("Authorization", "").partition(" ")
+    return scheme.lower() == "bearer" and hmac.compare_digest(token.encode(), MCP_SERVICE_TOKEN.encode())
+
+
 def is_admin():
-    return ADMIN_PASSWORD_HASH is None or bool(session.get("is_admin"))
+    return ADMIN_PASSWORD_HASH is None or bool(session.get("is_admin")) or has_service_token()
 
 
 def admin_required(fn):
