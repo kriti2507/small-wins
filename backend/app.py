@@ -35,6 +35,7 @@ if ADMIN_PASSWORD_HASH and app.secret_key == "dev-only-not-secret":
 # Lets the MCP server (mcp_server/, a separate Vercel function) make admin
 # changes. Unset means only the session cookie counts.
 MCP_SERVICE_TOKEN = os.environ.get("MCP_SERVICE_TOKEN")
+
 app.permanent_session_lifetime = timedelta(days=30)
 app.config["SESSION_COOKIE_HTTPONLY"] = True
 app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
