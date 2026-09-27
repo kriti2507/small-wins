@@ -3,10 +3,15 @@
   "buildCommand": "cd frontend && npm install && npm run build",
   "outputDirectory": "frontend/dist",
   "functions": {
-    "api/index.py": { "includeFiles": "backend/**" }
+    "api/index.py": { "includeFiles": "backend/**" },
+    "api/mcp_endpoint.py": { "includeFiles": "mcp_server/**" }
   },
   "rewrites": [
     { "source": "/api/(.*)", "destination": "/api/index" },
+    { "source": "/mcp", "destination": "/api/mcp_endpoint" },
+    { "source": "/(authorize|token|register)", "destination": "/api/mcp_endpoint" },
+    { "source": "/oauth/(.*)", "destination": "/api/mcp_endpoint" },
+    { "source": "/.well-known/(.*)", "destination": "/api/mcp_endpoint" },
     { "source": "/(.*)", "destination": "/index.html" }
   ]
 }

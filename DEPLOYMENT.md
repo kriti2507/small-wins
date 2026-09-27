@@ -41,6 +41,7 @@ In the Vercel project → Settings → Environment Variables, set:
 | `ADMIN_PASSWORD_HASH` | from step 2 |
 | `SECRET_KEY` | from step 2 |
 | `TRUST_PROXY` | `1` |
+| `MCP_SERVICE_TOKEN` | only if using the MCP server, see below |
 
 Never commit these or expose the service key to the frontend.
 
@@ -65,6 +66,46 @@ Verify: `curl -s https://yourdomain/api/auth/me` → `{"is_admin":false}`, then
 open `/login`, enter the password, and confirm edit controls unlock. Login only
 sticks over HTTPS (the session cookie is `Secure`); Vercel is HTTPS so this is
 automatic.
+
+## MCP server (optional)
+
+Lets MCP clients (claude.ai, ChatGPT, Cursor, Claude Code, …) read entries and
+add/edit them. Code in `mcp_server/`, served by `api/mcp_endpoint.py`.
+
+Generate two secrets:
+
+```sh
+.venv/bin/python -c "import secrets; print(secrets.token_hex(32))"   # MCP_TOKEN_SECRET
+.venv/bin/python -c "import secrets; print(secrets.token_hex(32))"   # MCP_SERVICE_TOKEN
+```
+
+Add to Vercel (Production and Preview):
+
+| Var | Value |
+|-----|-------|
+| `APP_BASE_URL` | Public origin, e.g. `https://yourdomain` (no trailing slash) |
+| `MCP_TOKEN_SECRET` | from above; signs OAuth clients and tokens |
+| `MCP_SERVICE_TOKEN` | from above; lets the MCP function call the API as admin |
+
+`ADMIN_PASSWORD_HASH` is reused for the MCP login page. Redeploy.
+
+Connect a client with the URL `https://yourdomain/mcp`. The client opens a
+Small Wins page showing where you'll be sent afterwards. Check that it's the
+app you just came from, enter the admin password, and click **Allow**.
+
+**Kill switch:** replace `MCP_TOKEN_SECRET` and redeploy. Every connected
+client is logged out. There's no per-client revoke (tokens aren't stored).
+Access tokens last 1 hour; clients refresh silently for up to 30 days.
+
+Local run (Flask on :5000, MCP on :8000). If `backend/.env` sets
+`ADMIN_PASSWORD_HASH`, also put the same `MCP_SERVICE_TOKEN` there:
+
+```sh
+APP_BASE_URL=http://localhost:8000 SMALL_WINS_API_URL=http://localhost:5000 \
+MCP_TOKEN_SECRET=dev-token-secret MCP_SERVICE_TOKEN=dev-service-token \
+ADMIN_PASSWORD_HASH='<hash from step 2>' \
+.venv/bin/python -m uvicorn --app-dir api mcp_endpoint:app --port 8000
+```
 
 ## Changing the password later
 
