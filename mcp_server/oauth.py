@@ -115,9 +115,9 @@ class SmallWinsOAuthProvider:
         pending, _ = self._loads("pending", req, max_age=PENDING_TTL)
         return pending
 
-    def approve(self, pending):
-        """URL to send the browser to once the admin has logged in."""
-        code = self._dumps("code", {**pending, "nonce": secrets.token_urlsafe(16)})
+    def approve(self, pending, user_id):
+        """URL to send the browser to once the signed-in user has allowed."""
+        code = self._dumps("code", {**pending, "subject": str(user_id), "nonce": secrets.token_urlsafe(16)})
         return construct_redirect_uri(pending["redirect_uri"], code=code, state=pending["state"])
 
     async def load_authorization_code(self, client, authorization_code: str) -> AuthorizationCode | None:
@@ -133,15 +133,18 @@ class SmallWinsOAuthProvider:
             redirect_uri=data["redirect_uri"],
             redirect_uri_provided_explicitly=data["explicit"],
             resource=data["resource"],
+            subject=data.get("subject"),
         )
 
     async def exchange_authorization_code(self, client, authorization_code) -> OAuthToken:
-        return self._issue(client.client_id, authorization_code.scopes, authorization_code.resource)
+        return self._issue(
+            client.client_id, authorization_code.scopes, authorization_code.resource, authorization_code.subject
+        )
 
     # --- tokens ------------------------------------------------------------
 
-    def _issue(self, client_id, scopes, resource):
-        claims = {"client_id": client_id, "scopes": scopes, "resource": resource}
+    def _issue(self, client_id, scopes, resource, subject):
+        claims = {"client_id": client_id, "scopes": scopes, "resource": resource, "subject": subject}
         return OAuthToken(
             access_token=self._dumps("access", claims),
             expires_in=ACCESS_TTL,
@@ -162,7 +165,7 @@ class SmallWinsOAuthProvider:
         return RefreshToken(token=refresh_token, expires_at=int(issued + REFRESH_TTL), **claims)
 
     async def exchange_refresh_token(self, client, refresh_token, scopes) -> OAuthToken:
-        return self._issue(client.client_id, scopes, refresh_token.resource)
+        return self._issue(client.client_id, scopes, refresh_token.resource, refresh_token.subject)
 
     async def revoke_token(self, token) -> None:
         """Unreachable: revocation isn't advertised, since stateless tokens
