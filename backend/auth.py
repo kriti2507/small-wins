@@ -7,8 +7,9 @@ import hmac
 import os
 from functools import wraps
 
+from authlib.integrations.base_client import OAuthError
 from authlib.integrations.flask_client import OAuth
-from flask import Blueprint, jsonify, request, session
+from flask import Blueprint, jsonify, redirect, request, session, url_for
 
 import db
 
@@ -102,3 +103,39 @@ def me():
 def logout():
     session.clear()
     return jsonify({"ok": True})
+
+
+def _finish_sign_in(user):
+    next_path = safe_next(session.get("next"))
+    session.clear()  # drop Authlib's state and any earlier identity
+    session.permanent = True
+    session["user_id"] = user["id"]
+    return redirect(next_path)
+
+
+@bp.route("/api/auth/google", methods=["GET"])
+def google_login():
+    session["next"] = safe_next(request.args.get("next"))
+    dev_email = os.environ.get("DEV_LOGIN_EMAIL")
+    if dev_email:
+        # check_config guarantees this never runs on Vercel.
+        return _finish_sign_in(db.upsert_user(f"dev:{dev_email}", dev_email, "Dev", None))
+    return oauth.google.authorize_redirect(url_for("auth.google_callback", _external=True))
+
+
+@bp.route("/api/auth/google/callback", methods=["GET"])
+def google_callback():
+    try:
+        # Exchanges the code and validates the ID token (signature, audience,
+        # nonce); "userinfo" holds the verified claims.
+        token = oauth.google.authorize_access_token()
+    except OAuthError:
+        session.clear()
+        return redirect("/login?error=failed")
+    info = token.get("userinfo") or {}
+    email = (info.get("email") or "").strip().lower()
+    if not info.get("email_verified") or not is_allowed(email):
+        session.clear()
+        return redirect("/login?error=not_invited")
+    user = db.upsert_user(info["sub"], email, info.get("name"), info.get("picture"))
+    return _finish_sign_in(user)
