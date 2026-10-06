@@ -6,7 +6,13 @@ export function loginPath(pathname: string, search = ""): string {
 /** A path on this site to go to after sign-in; anything else becomes "/".
  * Mirrors safe_next in backend/auth.py. */
 export function safeNext(next: string | null): string {
-  if (!next || !next.startsWith("/") || next.startsWith("//") || next.includes("\\")) {
+  if (
+    !next ||
+    !next.startsWith("/") ||
+    next.startsWith("//") ||
+    next.includes("\\") ||
+    /[\x00-\x1f\x7f]/.test(next)
+  ) {
     return "/";
   }
   return next;

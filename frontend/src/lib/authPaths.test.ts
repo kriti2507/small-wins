@@ -14,7 +14,7 @@ describe("safeNext", () => {
   });
 
   it("replaces anything else with /", () => {
-    for (const bad of [null, "", "topic", "//evil.com", "https://evil.com", "/\\evil.com"]) {
+    for (const bad of [null, "", "topic", "//evil.com", "https://evil.com", "/\\evil.com", "/\t/evil.com", "/x\ny"]) {
       expect(safeNext(bad)).toBe("/");
     }
   });
