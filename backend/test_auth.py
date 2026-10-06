@@ -29,7 +29,8 @@ def test_safe_next_keeps_same_site_paths(value):
 
 
 @pytest.mark.parametrize("value", [None, "", "topic", "//evil.com", "https://evil.com",
-                                   "/\\evil.com", "\\\\evil.com", 42])
+                                   "/\\evil.com", "\\\\evil.com", 42,
+                                   "/\t/evil.com", "/x\ny"])
 def test_safe_next_replaces_anything_else_with_root(value):
     assert auth.safe_next(value) == "/"
 
@@ -44,6 +45,11 @@ def test_check_config_refuses_dev_login_on_vercel():
 def test_check_config_requires_a_real_secret_with_google():
     with pytest.raises(RuntimeError, match="SECRET_KEY"):
         auth.check_config({"GOOGLE_CLIENT_ID": "cid"}, auth.DEV_SECRET)
+
+
+def test_check_config_requires_a_real_secret_on_vercel():
+    with pytest.raises(RuntimeError, match="SECRET_KEY"):
+        auth.check_config({"VERCEL": "1"}, auth.DEV_SECRET)
 
 
 def test_check_config_accepts_dev_and_production_setups():
@@ -137,6 +143,14 @@ def test_email_off_the_allowlist_is_not_invited(db_anon_client, google):
 
 def test_cancelled_or_broken_google_sign_in_reports_failure(db_anon_client, google):
     google.error = OAuthError(error="access_denied")
+    res = sign_in(db_anon_client)
+    assert res.headers["Location"] == "/login?error=failed"
+    assert db_anon_client.get("/api/auth/me").status_code == 401
+
+
+def test_bad_id_token_claims_report_failure(db_anon_client, google):
+    from joserfc.errors import ExpiredTokenError
+    google.error = ExpiredTokenError("exp")
     res = sign_in(db_anon_client)
     assert res.headers["Location"] == "/login?error=failed"
     assert db_anon_client.get("/api/auth/me").status_code == 401

@@ -10,6 +10,7 @@ from functools import wraps
 from authlib.integrations.base_client import OAuthError
 from authlib.integrations.flask_client import OAuth
 from flask import Blueprint, jsonify, redirect, request, session, url_for
+from joserfc.errors import JoseError
 
 import db
 
@@ -35,13 +36,16 @@ def safe_next(value):
     """A path on this site to return to after sign-in; anything else is '/'.
 
     '//host' and backslashes are refused because browsers treat both as
-    links to another site.
+    links to another site. Non-printable characters (tabs, newlines, ...)
+    are refused too: browsers strip them before following a link, which can
+    turn e.g. "/\\t/evil.com" into "//evil.com" after the checks above ran.
     """
     if (
         not isinstance(value, str)
         or not value.startswith("/")
         or value.startswith("//")
         or "\\" in value
+        or not value.isprintable()
     ):
         return "/"
     return value
@@ -75,6 +79,8 @@ def check_config(environ, secret_key):
         raise RuntimeError("DEV_LOGIN_EMAIL must never be set on Vercel")
     if environ.get("GOOGLE_CLIENT_ID") and secret_key == DEV_SECRET:
         raise RuntimeError("SECRET_KEY must be set when Google sign-in is configured")
+    if environ.get("VERCEL") and secret_key == DEV_SECRET:
+        raise RuntimeError("SECRET_KEY must be set on Vercel")
 
 
 def init_app(app):
@@ -127,9 +133,11 @@ def google_login():
 def google_callback():
     try:
         # Exchanges the code and validates the ID token (signature, audience,
-        # nonce); "userinfo" holds the verified claims.
+        # nonce); "userinfo" holds the verified claims. Expired/clock-skewed
+        # or otherwise malformed ID tokens raise joserfc's JoseError here, not
+        # OAuthError.
         token = oauth.google.authorize_access_token()
-    except OAuthError:
+    except (OAuthError, JoseError):
         session.clear()
         return redirect("/login?error=failed")
     info = token.get("userinfo") or {}
