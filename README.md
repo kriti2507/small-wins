@@ -22,7 +22,7 @@ The backend talks to Supabase (Postgres + Storage). Copy
 `backend/.env.example` to `backend/.env` and fill in `DATABASE_URL`,
 `SUPABASE_URL`, `SUPABASE_SERVICE_KEY`, and `SUPABASE_BUCKET` (use a
 **separate dev Supabase project** so local work never touches prod data).
-Leave `ADMIN_PASSWORD_HASH`/`SECRET_KEY` unset locally for dev-admin mode.
+Set `DEV_LOGIN_EMAIL=you@example.com` locally so sign-in works without Google.
 
 ```sh
 pip install -r backend/requirements.txt
@@ -64,31 +64,14 @@ cd frontend && npm run build
 npm run preview              # locally preview the built frontend
 ```
 
-## Admin access
+## Sign-in
 
-Anyone can view the site; changing anything requires the admin session.
-The backend reads two environment variables:
+Everything is private: every page and API route needs a signed-in user.
+Sign-in is Google only, limited to the emails in `ALLOWED_EMAILS`. Production
+needs `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `ALLOWED_EMAILS` and
+`SECRET_KEY` (signs the 30-day session cookie); see `DEPLOYMENT.md` step 2.
+Behind a reverse proxy, set `TRUST_PROXY=1` so the Google callback URL is built
+with `https`.
 
-- `ADMIN_PASSWORD_HASH` — hash of the admin password. Generate it with:
-
-  ```sh
-  python -c "from werkzeug.security import generate_password_hash; print(generate_password_hash(input('Password: ')))"
-  ```
-
-  (If Python complains about missing `scrypt` — e.g. macOS system
-  Python 3.9 — add `, method='pbkdf2'` to the
-  `generate_password_hash` call; the resulting hash works the same.)
-
-- `SECRET_KEY` — a long random string used to sign the session cookie
-  (e.g. `python -c "import secrets; print(secrets.token_hex(32))"`).
-
-Set both wherever the Flask app runs in production. Log in at `/login`
-(the page is not linked anywhere); the session lasts 30 days per browser.
-
-In production, run the backend with a real WSGI server (e.g. gunicorn)
-rather than `python app.py`, and set `TRUST_PROXY=1` if it sits behind a
-reverse proxy so the login rate limit sees real client IPs.
-
-**If neither variable is set (local dev), every request is treated as
-admin** — no login needed while developing. Never deploy without
-`ADMIN_PASSWORD_HASH`, or the site is world-writable.
+Local dev: set `DEV_LOGIN_EMAIL` instead of Google credentials. The app
+refuses to start if `DEV_LOGIN_EMAIL` is set on Vercel.
