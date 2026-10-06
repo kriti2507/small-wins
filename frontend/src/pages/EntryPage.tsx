@@ -8,14 +8,11 @@ import { tileModel } from "../lib/tile";
 import { toDoc, hasPost } from "../lib/post";
 import EntryEditor from "../components/EntryEditor";
 import PostView from "../components/PostView";
-import AdminGate from "../components/AdminGate";
-import { useAuth } from "../auth";
 
 export default function EntryPage() {
   const { slug = "", id = "" } = useParams();
   const entryId = Number(id);
   const navigate = useNavigate();
-  const { isAdmin } = useAuth();
   const [topic, setTopic] = useState<Topic | null>(null);
   const [entry, setEntry] = useState<Entry | null>(null);
   const [notFound, setNotFound] = useState(false);
@@ -116,18 +113,14 @@ export default function EntryPage() {
                 <h1>{t.heading}</h1>
                 <span className="meta">{t.meta}</span>
               </div>
-              <AdminGate>
-                <button className="primary" onClick={() => setEditing(true)}>
-                  Edit
-                </button>
-              </AdminGate>
+              <button className="primary" onClick={() => setEditing(true)}>
+                Edit
+              </button>
             </div>
             {hasPost(entry) ? (
               <PostView doc={doc} />
             ) : (
-              <p className="post-empty">
-                {isAdmin ? "Nothing written yet. Hit Edit to start." : "Nothing written yet."}
-              </p>
+              <p className="post-empty">Nothing written yet. Hit Edit to start.</p>
             )}
           </>
         )}

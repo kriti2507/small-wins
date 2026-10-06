@@ -53,6 +53,7 @@ describe("readJson", () => {
 describe("httpErrorMessage", () => {
   it("explains the statuses a user can act on", () => {
     expect(httpErrorMessage(413)).toMatch(/too large/i);
-    expect(httpErrorMessage(403)).toMatch(/admin/i);
+    expect(httpErrorMessage(401)).toMatch(/sign in again/i);
+    expect(httpErrorMessage(403)).not.toMatch(/admin/i);
   });
 });

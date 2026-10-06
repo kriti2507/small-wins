@@ -8,6 +8,7 @@ import AspectGrid from "../components/AspectGrid";
 import TopicForm from "../components/TopicForm";
 import RangeControls, { type Preset } from "../components/RangeControls";
 import BackgroundDoodles from "../components/BackgroundDoodles";
+import { useAuth } from "../auth";
 
 const PRESETS: Preset[] = [
   { key: "7", label: "Last 7 days" },
@@ -31,6 +32,7 @@ function presetRange(preset: string): DateRange {
 }
 
 export default function HomePage() {
+  const { user, logout } = useAuth();
   const [topicsData, setTopicsData] = useState<CapsuleTopicData[]>([]);
   const [showForm, setShowForm] = useState(false);
   const [preset, setPreset] = useState("30");
@@ -74,6 +76,12 @@ export default function HomePage() {
   return (
     <>
       <BackgroundDoodles />
+      <div className="account">
+        {user?.avatar_url && (
+          <img className="account-avatar" src={user.avatar_url} alt="" referrerPolicy="no-referrer" />
+        )}
+        <button onClick={() => logout()}>Sign out</button>
+      </div>
       <h1>Small Wins</h1>
       <p className="intro">
         A little diary for the good things. Track the small wins across the

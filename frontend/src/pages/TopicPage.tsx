@@ -8,7 +8,6 @@ import ContributionGraph from "../components/ContributionGraph";
 import EntryForm from "../components/EntryForm";
 import EntryList from "../components/EntryList";
 import RangeControls, { type Preset } from "../components/RangeControls";
-import AdminGate from "../components/AdminGate";
 import BackgroundDoodles from "../components/BackgroundDoodles";
 
 const PRESETS: Preset[] = [
@@ -133,29 +132,25 @@ export default function TopicPage() {
       </div>
 
       <div className="toolbar">
-        <AdminGate>
-          <button className="primary" onClick={() => setShowForm(true)}>
-            + Add entry
+        <button className="primary" onClick={() => setShowForm(true)}>
+          + Add entry
+        </button>
+        <div className="layout-toggle" role="group" aria-label="Tile layout">
+          <button
+            type="button"
+            className={(topic.layout ?? "photo-top") !== "thumbnail" ? "active" : ""}
+            onClick={() => changeLayout("photo-top")}
+          >
+            Photo
           </button>
-        </AdminGate>
-        <AdminGate>
-          <div className="layout-toggle" role="group" aria-label="Tile layout">
-            <button
-              type="button"
-              className={(topic.layout ?? "photo-top") !== "thumbnail" ? "active" : ""}
-              onClick={() => changeLayout("photo-top")}
-            >
-              Photo
-            </button>
-            <button
-              type="button"
-              className={topic.layout === "thumbnail" ? "active" : ""}
-              onClick={() => changeLayout("thumbnail")}
-            >
-              Thumbnail
-            </button>
-          </div>
-        </AdminGate>
+          <button
+            type="button"
+            className={topic.layout === "thumbnail" ? "active" : ""}
+            onClick={() => changeLayout("thumbnail")}
+          >
+            Thumbnail
+          </button>
+        </div>
       </div>
 
       {showForm && (

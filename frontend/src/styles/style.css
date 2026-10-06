@@ -974,59 +974,37 @@ a.back:hover {
   flex: 1;
 }
 
-/* Edit affordances seen by visitors: inert, dimmed, tooltip on hover
-   (AdminGate). pointer-events: none on the content lets the wrapper own
-   hover while making buttons unclickable. */
-.admin-gate {
-  display: inline-block;
-  cursor: not-allowed;
-}
-
-.admin-gate-content {
-  pointer-events: none;
-  opacity: 0.55;
-}
-
-/* Gated grid tiles (e.g. "+ Add more") must fill their cell. */
-.admin-gate.gate-block {
-  display: block;
-}
-
-.admin-gate.gate-block .admin-gate-content,
-.admin-gate.gate-block .admin-gate-content > * {
-  height: 100%;
-}
-
-/* Hidden admin login page */
-.login-form {
-  display: flex;
-  gap: 10px;
-  align-items: center;
-  flex-wrap: wrap;
+/* Sign-in page */
+.login {
   max-width: 420px;
+  margin: 18vh auto 0;
+  text-align: center;
 }
 
-.login-form input {
-  flex: 1;
-  min-width: 200px;
-  font: inherit;
-  padding: 0.45rem 0.6rem;
-  background: var(--card);
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  color: var(--ink);
-  transition: border-color 0.2s ease;
+.login .btn {
+  display: inline-block;
+  text-decoration: none;
 }
 
-.login-form input:focus {
-  border-color: var(--ink-faint);
+/* Account corner on the home page */
+.account {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 10px;
+}
+
+.account-avatar {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
 }
 
 .login-error {
-  flex-basis: 100%;
   color: var(--danger);
   font-size: 0.85rem;
   margin: 0;
+  margin-top: 1rem;
 }
 
 /* Background doodles — faint hand-drawn shapes that drift and bounce off
