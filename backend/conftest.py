@@ -35,3 +35,43 @@ def app_ctx(test_db):
     import app
     with app.app.app_context():
         yield
+
+
+@pytest.fixture()
+def anon_client(monkeypatch):
+    """No session and no database: for requests that end before any query.
+
+    Clears auth settings that backend/.env may have loaded, so the local
+    config can't change test results.
+    """
+    import app
+    for name in ("DEV_LOGIN_EMAIL", "MCP_SERVICE_TOKEN", "ALLOWED_EMAILS"):
+        monkeypatch.delenv(name, raising=False)
+    app.app.config["TESTING"] = True
+    return app.app.test_client()
+
+
+@pytest.fixture()
+def no_db_client(anon_client):
+    """Signed in, for endpoints that never touch the database."""
+    with anon_client.session_transaction() as s:
+        s["user_id"] = 1
+    return anon_client
+
+
+@pytest.fixture()
+def db_anon_client(test_db, anon_client):
+    """Signed out, with an empty test database."""
+    return anon_client
+
+
+@pytest.fixture()
+def client(test_db, anon_client):
+    """Signed in as a real users row, with an empty test database."""
+    import app
+    import db
+    with app.app.app_context():
+        user = db.upsert_user("sub-test", "test@example.com", "Test", None)
+    with anon_client.session_transaction() as s:
+        s["user_id"] = user["id"]
+    return anon_client

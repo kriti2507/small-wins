@@ -7,9 +7,16 @@ import hmac
 import os
 from functools import wraps
 
-from flask import jsonify, request, session
+from authlib.integrations.flask_client import OAuth
+from flask import Blueprint, jsonify, request, session
+
+import db
 
 DEV_SECRET = "dev-only-not-secret"
+GOOGLE_METADATA_URL = "https://accounts.google.com/.well-known/openid-configuration"
+
+bp = Blueprint("auth", __name__)
+oauth = OAuth()
 
 
 def is_allowed(email):
@@ -67,3 +74,31 @@ def check_config(environ, secret_key):
         raise RuntimeError("DEV_LOGIN_EMAIL must never be set on Vercel")
     if environ.get("GOOGLE_CLIENT_ID") and secret_key == DEV_SECRET:
         raise RuntimeError("SECRET_KEY must be set when Google sign-in is configured")
+
+
+def init_app(app):
+    oauth.init_app(app)
+    oauth.register(
+        "google",
+        client_id=os.environ.get("GOOGLE_CLIENT_ID"),
+        client_secret=os.environ.get("GOOGLE_CLIENT_SECRET"),
+        server_metadata_url=GOOGLE_METADATA_URL,
+        client_kwargs={"scope": "openid email profile"},
+    )
+    app.register_blueprint(bp)
+
+
+@bp.route("/api/auth/me", methods=["GET"])
+def me():
+    user_id = session.get("user_id")
+    user = db.find_user(user_id) if user_id is not None else None
+    if user is None:
+        session.pop("user_id", None)
+        return jsonify({"error": "Not signed in."}), 401
+    return jsonify({"user": user})
+
+
+@bp.route("/api/auth/logout", methods=["POST"])
+def logout():
+    session.clear()
+    return jsonify({"ok": True})

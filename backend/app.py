@@ -1,15 +1,12 @@
-import hmac
 import json
 import os
-import time
 import uuid
 from datetime import timedelta
-from functools import wraps
 
 from dotenv import load_dotenv
-from flask import Flask, g, jsonify, request, session
-from werkzeug.security import check_password_hash
+from flask import Flask, g, jsonify, request
 
+import auth
 import db
 import storage
 
@@ -25,34 +22,26 @@ app = Flask(__name__, static_folder=None)
 app.config["MAX_CONTENT_LENGTH"] = 5 * 1024 * 1024
 
 # --- Auth ------------------------------------------------------------------
-# Single-admin auth. If ADMIN_PASSWORD_HASH is unset (local dev), every request
-# is treated as admin. In production, set ADMIN_PASSWORD_HASH and SECRET_KEY.
-ADMIN_PASSWORD_HASH = os.environ.get("ADMIN_PASSWORD_HASH")
-app.secret_key = os.environ.get("SECRET_KEY", "dev-only-not-secret")
-if ADMIN_PASSWORD_HASH and app.secret_key == "dev-only-not-secret":
-    raise RuntimeError("SECRET_KEY must be set when ADMIN_PASSWORD_HASH is configured")
-
-# Lets the MCP server (mcp_server/, a separate Vercel function) make admin
-# changes. Unset means only the session cookie counts.
-MCP_SERVICE_TOKEN = os.environ.get("MCP_SERVICE_TOKEN")
+# Google sign-in lives in auth.py. Local dev sets DEV_LOGIN_EMAIL instead of
+# Google credentials (see backend/.env.example).
+app.secret_key = os.environ.get("SECRET_KEY", auth.DEV_SECRET)
+auth.check_config(os.environ, app.secret_key)
 
 app.permanent_session_lifetime = timedelta(days=30)
 app.config["SESSION_COOKIE_HTTPONLY"] = True
+# Lax: sent on the top-level redirect back from Google, withheld from
+# cross-site POSTs (which is what protects the MCP consent form).
 app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
-app.config["SESSION_COOKIE_SECURE"] = bool(ADMIN_PASSWORD_HASH)
+app.config["SESSION_COOKIE_SECURE"] = bool(os.environ.get("VERCEL"))
 
-# Behind Vercel (a reverse proxy), trust X-Forwarded-For so the login rate
-# limit sees real client IPs. Set TRUST_PROXY=1 in the Vercel env.
+# Behind Vercel (a reverse proxy), trust X-Forwarded-* so url_for builds the
+# https Google callback URL. Set TRUST_PROXY=1 in the Vercel env.
 if os.environ.get("TRUST_PROXY"):
     from werkzeug.middleware.proxy_fix import ProxyFix
 
     app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1)
 
-# Failed-login timestamps per IP. Best-effort on serverless (resets on cold
-# starts); acceptable for a single admin.
-LOGIN_ATTEMPTS = {}
-MAX_LOGIN_ATTEMPTS = 5
-LOGIN_WINDOW_SECONDS = 60
+auth.init_app(app)
 
 
 @app.teardown_appcontext
@@ -60,67 +49,6 @@ def _close_db(exc):
     conn = g.pop("db_conn", None)
     if conn is not None:
         conn.close()
-
-
-def has_service_token():
-    if not MCP_SERVICE_TOKEN:
-        return False
-    scheme, _, token = request.headers.get("Authorization", "").partition(" ")
-    return scheme.lower() == "bearer" and hmac.compare_digest(token.encode(), MCP_SERVICE_TOKEN.encode())
-
-
-def is_admin():
-    return ADMIN_PASSWORD_HASH is None or bool(session.get("is_admin")) or has_service_token()
-
-
-def admin_required(fn):
-    @wraps(fn)
-    def wrapper(*args, **kwargs):
-        if not is_admin():
-            return jsonify({"error": "Only admin can make changes."}), 403
-        return fn(*args, **kwargs)
-
-    return wrapper
-
-
-def too_many_attempts(ip):
-    now = time.time()
-    recent = [t for t in LOGIN_ATTEMPTS.get(ip, []) if now - t < LOGIN_WINDOW_SECONDS]
-    LOGIN_ATTEMPTS[ip] = recent
-    return len(recent) >= MAX_LOGIN_ATTEMPTS
-
-
-@app.route("/api/auth/me", methods=["GET"])
-def auth_me():
-    return jsonify({"is_admin": is_admin()})
-
-
-@app.route("/api/auth/login", methods=["POST"])
-def auth_login():
-    if ADMIN_PASSWORD_HASH is None:
-        return jsonify({"is_admin": True})  # dev mode: nothing to check
-
-    ip = request.remote_addr or "unknown"
-    if too_many_attempts(ip):
-        return jsonify({"error": "Too many attempts. Try again in a minute."}), 429
-
-    data = request.get_json(silent=True)
-    password = data.get("password") if isinstance(data, dict) else None
-    if not isinstance(password, str):
-        password = ""
-    if not check_password_hash(ADMIN_PASSWORD_HASH, password):
-        LOGIN_ATTEMPTS.setdefault(ip, []).append(time.time())
-        return jsonify({"error": "Wrong password."}), 401
-
-    session.permanent = True
-    session["is_admin"] = True
-    return jsonify({"is_admin": True})
-
-
-@app.route("/api/auth/logout", methods=["POST"])
-def auth_logout():
-    session.clear()
-    return jsonify({"is_admin": False})
 
 
 # Color ids the frontend palette offers; the first is the default.
@@ -197,12 +125,13 @@ def referenced_image_urls():
 # --- Topics API ------------------------------------------------------------
 
 @app.route("/api/topics", methods=["GET"])
+@auth.login_required
 def get_topics():
     return jsonify(db.load_topics())
 
 
 @app.route("/api/topics", methods=["POST"])
-@admin_required
+@auth.login_required
 def add_topic():
     data = request.get_json(force=True)
     name = (data.get("name") or "").strip()
@@ -238,7 +167,7 @@ def add_topic():
 
 
 @app.route("/api/topics/<slug>", methods=["PATCH"])
-@admin_required
+@auth.login_required
 def update_topic(slug):
     topic = db.find_topic(slug)
     if not topic:
@@ -256,7 +185,7 @@ def update_topic(slug):
 # --- Uploads API -----------------------------------------------------------
 
 @app.route("/api/uploads/sign", methods=["POST"])
-@admin_required
+@auth.login_required
 def sign_upload():
     """Hand the browser a URL to upload one image straight to Supabase.
 
@@ -289,6 +218,7 @@ def sign_upload():
 # --- Entries API -----------------------------------------------------------
 
 @app.route("/api/topics/<slug>/entries", methods=["GET"])
+@auth.login_required
 def get_entries(slug):
     if not db.find_topic(slug):
         return jsonify({"error": "Unknown topic."}), 404
@@ -296,7 +226,7 @@ def get_entries(slug):
 
 
 @app.route("/api/topics/<slug>/entries", methods=["POST"])
-@admin_required
+@auth.login_required
 def add_entry(slug):
     topic = db.find_topic(slug)
     if not topic:
@@ -321,6 +251,7 @@ def add_entry(slug):
 
 
 @app.route("/api/topics/<slug>/entries/<int:entry_id>", methods=["GET"])
+@auth.login_required
 def get_entry(slug, entry_id):
     if not db.find_topic(slug):
         return jsonify({"error": "Unknown topic."}), 404
@@ -331,7 +262,7 @@ def get_entry(slug, entry_id):
 
 
 @app.route("/api/topics/<slug>/entries/<int:entry_id>", methods=["PATCH"])
-@admin_required
+@auth.login_required
 def update_entry(slug, entry_id):
     topic = db.find_topic(slug)
     if not topic:
@@ -367,7 +298,7 @@ def update_entry(slug, entry_id):
 
 
 @app.route("/api/topics/<slug>/entries/<int:entry_id>", methods=["DELETE"])
-@admin_required
+@auth.login_required
 def delete_entry(slug, entry_id):
     if not db.find_topic(slug):
         return jsonify({"error": "Unknown topic."}), 404
@@ -405,4 +336,4 @@ def delete_entry(slug, entry_id):
 
 
 if __name__ == "__main__":
-    app.run(debug=ADMIN_PASSWORD_HASH is None, port=5000)
+    app.run(debug=bool(os.environ.get("DEV_LOGIN_EMAIL")), port=5000)
