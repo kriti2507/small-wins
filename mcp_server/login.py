@@ -1,18 +1,16 @@
 """The page a person sees mid-OAuth: who is asking, where they'll be sent,
-and the admin password. On success the browser goes back to the client with
-an authorization code."""
+and which account is signed in. Signing in is the web app's Google login:
+both apps share an origin, so the browser's Flask session cookie arrives here
+too, and Flask says whose it is. On Allow, the browser goes back to the client
+with an authorization code."""
 import html
-import time
-from urllib.parse import urlsplit
+from urllib.parse import urlencode, urlsplit
 
+import httpx
 from starlette.requests import Request
 from starlette.responses import HTMLResponse, RedirectResponse
-from werkzeug.security import check_password_hash
 
-MAX_ATTEMPTS = 5
-WINDOW_SECONDS = 60
-# Best-effort per-IP limit; resets on cold starts, like the Flask login's.
-_attempts = {}
+CHECK_FAILED = "Couldn't check your sign-in. Try again."
 
 # Nothing on this page should ever be framed or cached.
 HEADERS = {
@@ -23,22 +21,27 @@ HEADERS = {
 }
 
 
-def client_ip(request):
-    forwarded = request.headers.get("x-forwarded-for")
-    if forwarded:
-        return forwarded.split(",")[0].strip()
-    return request.client.host if request.client else "unknown"
+class SignInCheckFailed(Exception):
+    """Flask couldn't say who is signed in (down, or an unexpected reply)."""
 
 
-def too_many_attempts(ip, now=None):
-    now = time.time() if now is None else now
-    recent = [t for t in _attempts.get(ip, []) if now - t < WINDOW_SECONDS]
-    _attempts[ip] = recent
-    return len(recent) >= MAX_ATTEMPTS
-
-
-def record_failure(ip):
-    _attempts.setdefault(ip, []).append(time.time())
+async def signed_in_user(api_url, cookie, transport=None):
+    """The user the browser's Flask session belongs to, or None if signed out."""
+    if not cookie:
+        return None
+    try:
+        async with httpx.AsyncClient(base_url=api_url, timeout=10, transport=transport) as http:
+            resp = await http.get("/api/auth/me", headers={"Cookie": cookie})
+    except httpx.HTTPError:
+        raise SignInCheckFailed() from None
+    if resp.status_code == 401:
+        return None
+    if resp.status_code != 200:
+        raise SignInCheckFailed()
+    try:
+        return resp.json()["user"]
+    except (ValueError, KeyError, TypeError):
+        raise SignInCheckFailed() from None
 
 
 def destination(redirect_uri):
@@ -50,11 +53,27 @@ def destination(redirect_uri):
     return redirect_uri
 
 
-def render(pending, req, error=None, status=200):
+def google_link(req):
+    """Flask's Google sign-in, coming back to this same page afterwards."""
+    back = f"/oauth/login?{urlencode({'req': req})}"
+    return f"/api/auth/google?{urlencode({'next': back})}"
+
+
+def render(pending, req, user, error=None, status=200):
     dest = html.escape(destination(pending["redirect_uri"]))
     name = pending.get("client_name")
     claims = f'<p class="muted">It calls itself “{html.escape(name)}”.</p>' if name else ""
-    err = f'<p class="error">{html.escape(error)}</p>' if error else ""
+    # quote=False: this text lands inside a <p>, not an attribute, and
+    # escaping quotes would mangle contractions like "Couldn't".
+    err = f'<p class="error">{html.escape(error, quote=False)}</p>' if error else ""
+    if user:
+        action = f"""<p>Signed in as <strong>{html.escape(user["email"])}</strong>.</p>
+  <form method="post" action="/oauth/login">
+    <input type="hidden" name="req" value="{html.escape(req)}">
+    <button type="submit">Allow</button>
+  </form>"""
+    else:
+        action = f'<a class="button" href="{html.escape(google_link(req))}">Continue with Google</a>'
     page = f"""<!doctype html>
 <html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -64,7 +83,9 @@ def render(pending, req, error=None, status=200):
   .dest {{ font-size: 1.15rem; }}
   .muted {{ color: #666; }}
   .error {{ color: #b3261e; }}
-  input, button {{ font: inherit; padding: .6rem; width: 100%; box-sizing: border-box; margin-top: .5rem; }}
+  button, .button {{ display: block; font: inherit; padding: .6rem; width: 100%; box-sizing: border-box;
+    margin-top: .5rem; text-align: center; border: 1px solid #888; border-radius: 6px;
+    background: #f4f4f4; color: inherit; text-decoration: none; cursor: pointer; }}
 </style></head>
 <body>
   <h1>Connect an app to Small Wins</h1>
@@ -72,11 +93,7 @@ def render(pending, req, error=None, status=200):
   {claims}
   <p>It will be able to read your entries and add or edit them. Only continue if you started this from that app just now.</p>
   {err}
-  <form method="post" action="/oauth/login">
-    <input type="hidden" name="req" value="{html.escape(req)}">
-    <label>Admin password<input type="password" name="password" autofocus required></label>
-    <button type="submit">Allow</button>
-  </form>
+  {action}
 </body></html>"""
     return HTMLResponse(page, status_code=status, headers=HEADERS)
 
@@ -89,13 +106,20 @@ def invalid_request():
     )
 
 
-def make_login_handlers(provider, password_hash):
+def make_login_handlers(provider, check_user):
+    """check_user(cookie_header) -> user dict, None if signed out, or raises
+    SignInCheckFailed."""
+
     async def show(request: Request):
         req = request.query_params.get("req", "")
         pending = provider.load_pending(req)
         if pending is None:
             return invalid_request()
-        return render(pending, req)
+        try:
+            user = await check_user(request.headers.get("cookie"))
+        except SignInCheckFailed:
+            return render(pending, req, None, CHECK_FAILED, status=502)
+        return render(pending, req, user)
 
     async def submit(request: Request):
         form = await request.form()
@@ -103,12 +127,15 @@ def make_login_handlers(provider, password_hash):
         pending = provider.load_pending(req)
         if pending is None:
             return invalid_request()
-        ip = client_ip(request)
-        if too_many_attempts(ip):
-            return render(pending, req, "Too many attempts. Wait a minute and try again.", status=429)
-        if not check_password_hash(password_hash, str(form.get("password", ""))):
-            record_failure(ip)
-            return render(pending, req, "Wrong password.", status=401)
-        return RedirectResponse(provider.approve(pending), status_code=302, headers=HEADERS)
+        try:
+            # Checked again here, not trusted from the GET: the session cookie
+            # is SameSite=Lax, so a POST forged by another site arrives without
+            # it and lands in the "signed out" branch.
+            user = await check_user(request.headers.get("cookie"))
+        except SignInCheckFailed:
+            return render(pending, req, None, CHECK_FAILED, status=502)
+        if user is None:
+            return render(pending, req, None, "Sign in with Google first.", status=401)
+        return RedirectResponse(provider.approve(pending, user["id"]), status_code=302, headers=HEADERS)
 
     return show, submit
