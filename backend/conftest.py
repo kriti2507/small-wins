@@ -14,7 +14,7 @@ def _schema():
     with open(SCHEMA_PATH) as f:
         ddl = f.read()
     with psycopg.connect(TEST_DATABASE_URL, autocommit=True) as conn:
-        conn.execute("drop table if exists posts, entries, topics cascade")
+        conn.execute("drop table if exists posts, entries, topics, users cascade")
         conn.execute(ddl)
     return TEST_DATABASE_URL
 
@@ -25,7 +25,7 @@ def test_db(_schema, monkeypatch):
     import db
     monkeypatch.setattr(db, "DATABASE_URL", _schema)
     with psycopg.connect(_schema, autocommit=True) as conn:
-        conn.execute("truncate topics, entries, posts cascade")
+        conn.execute("truncate topics, entries, posts, users cascade")
     return _schema
 
 

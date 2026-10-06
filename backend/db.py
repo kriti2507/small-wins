@@ -178,3 +178,32 @@ def all_post_docs():
     conn = get_conn()
     rows = conn.execute("select doc from posts").fetchall()
     return [r["doc"] for r in rows]
+
+
+# --- Users -------------------------------------------------------------------
+
+USER_COLUMNS = "id, email, name, avatar_url"
+
+
+def upsert_user(google_sub, email, name, avatar_url):
+    """Create the user on first sign-in; refresh their profile on later ones.
+
+    Keyed by Google's stable `sub`, not email, since an account's email can
+    change.
+    """
+    row = get_conn().execute(
+        "insert into users (google_sub, email, name, avatar_url) "
+        "values (%s, %s, %s, %s) "
+        "on conflict (google_sub) do update set email = excluded.email, "
+        "name = excluded.name, avatar_url = excluded.avatar_url "
+        f"returning {USER_COLUMNS}",
+        (google_sub, email, name, avatar_url),
+    ).fetchone()
+    return dict(row)
+
+
+def find_user(user_id):
+    row = get_conn().execute(
+        f"select {USER_COLUMNS} from users where id=%s", (user_id,)
+    ).fetchone()
+    return dict(row) if row else None
