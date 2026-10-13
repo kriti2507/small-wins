@@ -2,42 +2,8 @@ import urllib.error
 from io import BytesIO
 
 import pytest
-from werkzeug.security import generate_password_hash
 
 import app as app_module
-
-TEST_PASSWORD = "correct horse"
-TEST_HASH = generate_password_hash(TEST_PASSWORD, method="pbkdf2:sha256")
-
-
-@pytest.fixture()
-def client(test_db, monkeypatch):
-    # test_db (conftest) points db.py at the test database and truncates tables.
-    monkeypatch.setattr(app_module, "ADMIN_PASSWORD_HASH", None, raising=False)
-    monkeypatch.setattr(app_module, "LOGIN_ATTEMPTS", {}, raising=False)
-    app_module.app.config["TESTING"] = True
-    app_module.app.config["SESSION_COOKIE_SECURE"] = False
-    return app_module.app.test_client()
-
-
-@pytest.fixture()
-def no_db_client(monkeypatch):
-    """Client for endpoints that never touch the database, so these still run
-    without TEST_DATABASE_URL configured."""
-    monkeypatch.setattr(app_module, "ADMIN_PASSWORD_HASH", None, raising=False)
-    app_module.app.config["TESTING"] = True
-    app_module.app.config["SESSION_COOKIE_SECURE"] = False
-    return app_module.app.test_client()
-
-
-@pytest.fixture()
-def auth_client(client, monkeypatch):
-    monkeypatch.setattr(app_module, "ADMIN_PASSWORD_HASH", TEST_HASH)
-    return client
-
-
-def log_in(c, password=TEST_PASSWORD):
-    return c.post("/api/auth/login", json={"password": password})
 
 
 DOC = {
@@ -489,119 +455,93 @@ def test_sign_upload_reports_storage_failure_as_json_not_html(no_db_client, monk
     assert res.get_json()["error"]
 
 
-# --- Auth -------------------------------------------------------------------
+# --- Access control -----------------------------------------------------------
 
-def test_me_reports_admin_in_dev_mode(client):
-    assert client.get("/api/auth/me").get_json() == {"is_admin": True}
-
-
-def test_me_reports_visitor_when_password_configured(auth_client):
-    assert auth_client.get("/api/auth/me").get_json() == {"is_admin": False}
+# Auth endpoints decide for themselves; every other route must need sign-in.
+PUBLIC_ENDPOINTS = {"auth.me", "auth.google_login", "auth.google_callback", "auth.logout"}
 
 
-def test_login_with_correct_password(auth_client):
-    res = log_in(auth_client)
-    assert res.status_code == 200
-    assert res.get_json() == {"is_admin": True}
-    assert auth_client.get("/api/auth/me").get_json() == {"is_admin": True}
+def protected_routes():
+    for rule in app_module.app.url_map.iter_rules():
+        if rule.endpoint in PUBLIC_ENDPOINTS:
+            continue
+        path = rule.rule.replace("<int:entry_id>", "1").replace("<slug>", "runs")
+        assert "<" not in path, f"teach protected_routes about {rule.rule}"
+        for method in sorted(rule.methods - {"HEAD", "OPTIONS"}):
+            yield method, path
 
 
-def test_login_with_wrong_password(auth_client):
-    res = log_in(auth_client, "nope")
-    assert res.status_code == 401
-    assert auth_client.get("/api/auth/me").get_json() == {"is_admin": False}
+def test_every_route_needs_sign_in(anon_client):
+    routes = list(protected_routes())
+    assert len(routes) >= 9  # guards against the url_map walk silently finding nothing
+    for method, path in routes:
+        res = anon_client.open(path, method=method, json={})
+        assert res.status_code == 401, f"{method} {path} -> {res.status_code}"
+        assert res.get_json()["error"] == "Sign in to continue."
 
 
-def test_logout_clears_session(auth_client):
-    log_in(auth_client)
-    assert auth_client.post("/api/auth/logout").status_code == 200
-    assert auth_client.get("/api/auth/me").get_json() == {"is_admin": False}
-
-
-def test_login_rejects_malformed_payloads(auth_client):
-    bad = [
-        ("[1, 2]", "application/json"),
-        ('{"password": 123}', "application/json"),
-        ("not json", "text/plain"),
-    ]
-    for body, ctype in bad:
-        res = auth_client.post("/api/auth/login", data=body, content_type=ctype)
-        assert res.status_code == 401, f"{body!r} -> {res.status_code}"
-
-
-def test_writes_locked_out_for_visitors(auth_client):
-    checks = [
-        ("post", "/api/topics", {"json": {"name": "Reads"}}),
-        ("patch", "/api/topics/runs", {"json": {"layout": "thumbnail"}}),
-        ("post", "/api/topics/runs/entries", {"json": {"date": "2026-07-10"}}),
-        ("patch", "/api/topics/runs/entries/1",
-         {"json": {"body": {"type": "doc", "content": []}}}),
-        ("post", "/api/uploads/sign", {"json": {"ext": "png"}}),
-        ("delete", "/api/topics/runs/entries/1", {}),
-    ]
-    for method, url, kwargs in checks:
-        res = getattr(auth_client, method)(url, **kwargs)
-        assert res.status_code == 403, f"{method} {url} -> {res.status_code}"
-        assert res.get_json()["error"] == "Only admin can make changes."
-
-
-def test_writes_allowed_after_login(auth_client):
-    log_in(auth_client)
-    res = auth_client.post("/api/topics/runs/entries",
-                           json={"date": "2026-07-10", "title": "Run"})
+def test_reads_and_writes_work_when_signed_in(client):
+    assert client.get("/api/topics").status_code == 200
+    res = client.post("/api/topics/runs/entries", json={"date": "2026-07-10", "title": "Run"})
     assert res.status_code == 201
 
 
-def test_writes_locked_again_after_logout(auth_client):
-    log_in(auth_client)
-    auth_client.post("/api/auth/logout")
-    res = auth_client.post("/api/topics/runs/entries", json={"date": "2026-07-10"})
-    assert res.status_code == 403
+def test_me_returns_the_signed_in_user(client):
+    res = client.get("/api/auth/me")
+    assert res.status_code == 200
+    user = res.get_json()["user"]
+    assert (user["email"], user["name"], user["avatar_url"]) == ("test@example.com", "Test", None)
+    assert isinstance(user["id"], int)
 
 
-def test_reads_stay_public(auth_client):
-    assert auth_client.get("/api/topics").status_code == 200
-    assert auth_client.get("/api/topics/runs/entries").status_code == 200
+def test_me_is_401_when_signed_out(db_anon_client):
+    res = db_anon_client.get("/api/auth/me")
+    assert res.status_code == 401
+    assert res.get_json()["error"] == "Not signed in."
 
 
-def test_login_rate_limited_after_five_failures(auth_client):
-    for _ in range(5):
-        assert log_in(auth_client, "wrong").status_code == 401
-    assert log_in(auth_client, "wrong").status_code == 429
-    assert log_in(auth_client).status_code == 429
+def test_me_drops_a_session_whose_user_is_gone(db_anon_client):
+    with db_anon_client.session_transaction() as s:
+        s["user_id"] = 999999
+    assert db_anon_client.get("/api/auth/me").status_code == 401
+    with db_anon_client.session_transaction() as s:
+        assert "user_id" not in s
+
+
+def test_logout_signs_out(client):
+    assert client.post("/api/auth/logout").status_code == 200
+    assert client.get("/api/auth/me").status_code == 401
+    assert client.get("/api/topics").status_code == 401
 
 
 # --- MCP service token --------------------------------------------------------
 
-@pytest.fixture()
-def locked_client(no_db_client, monkeypatch):
-    """Auth switched on and no session: only the MCP service token gets in."""
-    monkeypatch.setattr(app_module, "ADMIN_PASSWORD_HASH", TEST_HASH)
-    monkeypatch.setattr(app_module, "MCP_SERVICE_TOKEN", "svc-token", raising=False)
-    return no_db_client
-
-
 def sign_bad_ext(c, headers=None):
-    # sign_upload rejects .exe with 400 only after the admin check passes, so
+    # sign_upload rejects .exe with 400 only after login_required passes, so
     # the status says which side of the check we landed on, with no DB needed.
     return c.post("/api/uploads/sign", json={"ext": "exe"}, headers=headers or {})
 
 
-def test_service_token_grants_admin(locked_client):
-    assert sign_bad_ext(locked_client, {"Authorization": "Bearer svc-token"}).status_code == 400
+def test_signed_in_session_passes_the_guard(no_db_client):
+    assert sign_bad_ext(no_db_client).status_code == 400
 
 
-def test_wrong_or_malformed_service_token_is_refused(locked_client):
+def test_service_token_passes_the_guard(anon_client, monkeypatch):
+    monkeypatch.setenv("MCP_SERVICE_TOKEN", "svc-token")
+    assert sign_bad_ext(anon_client, {"Authorization": "Bearer svc-token"}).status_code == 400
+
+
+def test_wrong_or_malformed_service_token_is_refused(anon_client, monkeypatch):
+    monkeypatch.setenv("MCP_SERVICE_TOKEN", "svc-token")
     for headers in (
         {},
         {"Authorization": "Bearer nope"},
         {"Authorization": "svc-token"},
         {"Authorization": "Basic svc-token"},
     ):
-        assert sign_bad_ext(locked_client, headers).status_code == 403, headers
+        assert sign_bad_ext(anon_client, headers).status_code == 401, headers
 
 
-def test_service_token_ignored_when_unset(locked_client, monkeypatch):
-    monkeypatch.setattr(app_module, "MCP_SERVICE_TOKEN", None)
-    assert sign_bad_ext(locked_client, {"Authorization": "Bearer "}).status_code == 403
-    assert sign_bad_ext(locked_client, {"Authorization": "Bearer None"}).status_code == 403
+def test_service_token_ignored_when_unset(anon_client):
+    assert sign_bad_ext(anon_client, {"Authorization": "Bearer "}).status_code == 401
+    assert sign_bad_ext(anon_client, {"Authorization": "Bearer None"}).status_code == 401

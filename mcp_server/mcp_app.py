@@ -4,7 +4,7 @@ from mcp.server.mcpserver import MCPServer
 from mcp.server.transport_security import TransportSecuritySettings
 
 from flask_client import FlaskClient
-from login import make_login_handlers
+from login import make_login_handlers, signed_in_user
 from oauth import SCOPE, SmallWinsOAuthProvider
 from tools import register_tools
 
@@ -15,11 +15,14 @@ INSTRUCTIONS = (
 )
 
 
-def build_server(config, make_client=None):
+def build_server(config, make_client=None, check_user=None):
     provider = SmallWinsOAuthProvider(config)
     if make_client is None:
         def make_client():
             return FlaskClient(config.api_url, config.service_token)
+    if check_user is None:
+        async def check_user(cookie):
+            return await signed_in_user(config.api_url, cookie)
 
     mcp = MCPServer(
         name="Small Wins",
@@ -35,21 +38,21 @@ def build_server(config, make_client=None):
             ),
         ),
     )
-    show, submit = make_login_handlers(provider, config.admin_password_hash)
+    show, submit = make_login_handlers(provider, check_user)
     mcp.custom_route("/oauth/login", methods=["GET"])(show)
     mcp.custom_route("/oauth/login", methods=["POST"])(submit)
     register_tools(mcp, make_client)
     return mcp
 
 
-def create_app(config, make_client=None):
+def create_app(config, make_client=None, check_user=None):
     """ASGI app that starts the SDK's session manager per request.
 
     The SDK only works once its lifespan has run, and serverless platforms
     may never send lifespan events. Stateless mode keeps nothing between
     requests, so building a fresh app per request is cheap and always safe.
     """
-    mcp = build_server(config, make_client)
+    mcp = build_server(config, make_client, check_user)
     # Host/Origin pinning guards servers on localhost against DNS rebinding.
     # This one is public and every MCP request needs a bearer token, so the
     # check would only block browser-based clients and preview URLs.

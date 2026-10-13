@@ -11,7 +11,7 @@ from oauth import SCOPE, SmallWinsOAuthProvider, redirect_uri_allowed
 
 pytestmark = pytest.mark.anyio
 
-CONFIG = Config("https://sw.example.com", "https://sw.example.com", "tok-secret", "svc", "hash")
+CONFIG = Config("https://sw.example.com", "https://sw.example.com", "tok-secret", "svc")
 REDIRECT = "https://claude.ai/api/mcp/auth_callback"
 
 
@@ -111,7 +111,7 @@ async def login_and_get_code(provider, client, state="xyz"):
     login_url = await provider.authorize(client, auth_params(state))
     assert login_url.startswith("https://sw.example.com/oauth/login?req=")
     pending = provider.load_pending(parse_qs(urlsplit(login_url).query)["req"][0])
-    back = urlsplit(provider.approve(pending))
+    back = urlsplit(provider.approve(pending, 7))
     assert f"{back.scheme}://{back.netloc}{back.path}" == REDIRECT
     query = parse_qs(back.query)
     assert query["state"] == [state]
@@ -181,3 +181,17 @@ def test_pending_requests_expire(provider, monkeypatch):
     monkeypatch.setattr(time, "time", lambda: real_time() + 601)
     assert provider.load_pending(req) is None
     assert provider.load_pending("garbage") is None
+
+
+async def test_the_user_rides_along_from_code_to_tokens_and_refresh(provider):
+    client = await provider.get_client((await registered(provider)).client_id)
+    code = await provider.load_authorization_code(client, await login_and_get_code(provider, client))
+    assert code.subject == "7"
+
+    tokens = await provider.exchange_authorization_code(client, code)
+    assert (await provider.load_access_token(tokens.access_token)).subject == "7"
+    refresh = await provider.load_refresh_token(client, tokens.refresh_token)
+    assert refresh.subject == "7"
+
+    renewed = await provider.exchange_refresh_token(client, refresh, [SCOPE])
+    assert (await provider.load_access_token(renewed.access_token)).subject == "7"

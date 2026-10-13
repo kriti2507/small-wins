@@ -23,3 +23,12 @@ create table posts (
   primary key (topic_slug, entry_id),
   foreign key (topic_slug, entry_id) references entries(topic_slug, id) on delete cascade
 );
+
+create table users (
+  id          bigserial primary key,
+  google_sub  text unique not null,
+  email       text not null,
+  name        text,
+  avatar_url  text,
+  created_at  timestamptz not null default now()
+);

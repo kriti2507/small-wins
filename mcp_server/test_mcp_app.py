@@ -9,17 +9,24 @@ from urllib.parse import parse_qs, urlsplit
 
 import httpx
 import pytest
-from werkzeug.security import generate_password_hash
 
-import login
 from config import Config
 from flask_client import FlaskClient
 from mcp_app import create_app
+from oauth import SmallWinsOAuthProvider
 
 pytestmark = pytest.mark.anyio
 
 BASE = "https://sw.example.com"
-CONFIG = Config(BASE, BASE, "tok-secret", "svc-token", generate_password_hash("pw", method="pbkdf2"))
+CONFIG = Config(BASE, BASE, "tok-secret", "svc-token")
+ME = {"id": 7, "email": "me@example.com", "name": "Me", "avatar_url": None}
+SIGNED_IN = {"cookie": "session=ok"}
+
+
+async def fake_check_user(cookie):
+    return ME if cookie == SIGNED_IN["cookie"] else None
+
+
 REDIRECT = "https://claude.ai/api/mcp/auth_callback"
 MCP_HEADERS = {"Accept": "application/json, text/event-stream", "MCP-Protocol-Version": "2025-06-18"}
 BOOKS = {"slug": "books", "name": "Books", "color": "green", "layout": "photo-top",
@@ -36,9 +43,12 @@ def fake_flask(request):
 
 
 @pytest.fixture
-async def http(monkeypatch):
-    monkeypatch.setattr(login, "_attempts", {})
-    app = create_app(CONFIG, lambda: FlaskClient(BASE, "svc-token", transport=httpx.MockTransport(fake_flask)))
+async def http():
+    app = create_app(
+        CONFIG,
+        lambda: FlaskClient(BASE, "svc-token", transport=httpx.MockTransport(fake_flask)),
+        check_user=fake_check_user,
+    )
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url=BASE) as c:
         yield c
 
@@ -63,7 +73,7 @@ async def connect(http):
     })
     assert res.status_code == 302, res.text
     req = parse_qs(urlsplit(res.headers["location"]).query)["req"][0]
-    res = await http.post("/oauth/login", data={"req": req, "password": "pw"})
+    res = await http.post("/oauth/login", data={"req": req}, headers=SIGNED_IN)
     assert res.status_code == 302, res.text
     code = parse_qs(urlsplit(res.headers["location"]).query)["code"][0]
     res = await http.post("/token", data={
@@ -139,3 +149,23 @@ async def test_answers_lifespan_events_itself():
 
     await app({"type": "lifespan"}, receive, send)
     assert sent == ["lifespan.startup.complete", "lifespan.shutdown.complete"]
+
+
+async def test_tokens_from_the_full_flow_belong_to_the_signed_in_user(http):
+    _, tokens = await connect(http)
+    access = await SmallWinsOAuthProvider(CONFIG).load_access_token(tokens["access_token"])
+    assert access.subject == "7"
+
+
+async def test_consent_post_without_a_session_is_refused(http):
+    reg = (await http.post("/register", json={
+        "redirect_uris": [REDIRECT], "token_endpoint_auth_method": "none",
+        "grant_types": ["authorization_code"], "response_types": ["code"],
+    })).json()
+    res = await http.get("/authorize", params={
+        "response_type": "code", "client_id": reg["client_id"], "redirect_uri": REDIRECT,
+        "code_challenge": "x" * 43, "code_challenge_method": "S256", "state": "s",
+    })
+    req = parse_qs(urlsplit(res.headers["location"]).query)["req"][0]
+    res = await http.post("/oauth/login", data={"req": req})
+    assert res.status_code == 401

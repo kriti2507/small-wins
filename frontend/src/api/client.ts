@@ -1,10 +1,11 @@
 import type { Topic, Entry, PostDoc } from "../types";
 import { prepareImage } from "../lib/image";
+import { loginPath } from "../lib/authPaths";
 
 /** A readable message for a response that carried no JSON error of its own. */
 export function httpErrorMessage(status: number, statusText = ""): string {
   if (status === 413) return "That file is too large to upload.";
-  if (status === 401 || status === 403) return "Sign in as admin to make changes.";
+  if (status === 401) return "Your session has ended. Sign in again.";
   if (status === 0) return "Could not reach the server.";
   return `Request failed (${status}${statusText ? ` ${statusText}` : ""}).`;
 }
@@ -37,7 +38,17 @@ export async function readJson<T>(res: {
   return data as T;
 }
 
-const json = readJson;
+/** A signed-out reply mid-session (cookie expired, signed out in another
+ * tab) sends the whole page to sign-in, then back here afterwards. */
+function redirectToLogin() {
+  if (window.location.pathname === "/login") return;
+  window.location.assign(loginPath(window.location.pathname, window.location.search));
+}
+
+function json<T>(res: Response): Promise<T> {
+  if (res.status === 401) redirectToLogin();
+  return readJson<T>(res);
+}
 
 export function getTopics(): Promise<Topic[]> {
   return fetch("/api/topics").then((r) => json<Topic[]>(r));
@@ -135,24 +146,23 @@ export async function uploadImage(file: File): Promise<{ url: string }> {
   return { url };
 }
 
-export interface AuthState {
-  is_admin: boolean;
+export interface User {
+  id: number;
+  email: string;
+  name: string | null;
+  avatar_url: string | null;
 }
 
-export function getMe(): Promise<AuthState> {
-  return fetch("/api/auth/me").then((r) => json<AuthState>(r));
+/** The signed-in user, or null when signed out. Never redirects: the
+ * caller (AuthProvider) decides what signed-out means. */
+export async function getMe(): Promise<User | null> {
+  const res = await fetch("/api/auth/me");
+  if (res.status === 401) return null;
+  return (await readJson<{ user: User }>(res)).user;
 }
 
-export function login(password: string): Promise<AuthState> {
-  return fetch("/api/auth/login", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ password }),
-  }).then((r) => json<AuthState>(r));
-}
-
-export function logout(): Promise<AuthState> {
+export function logout(): Promise<{ ok: boolean }> {
   return fetch("/api/auth/logout", { method: "POST" }).then((r) =>
-    json<AuthState>(r),
+    readJson<{ ok: boolean }>(r),
   );
 }

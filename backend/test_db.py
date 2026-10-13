@@ -129,3 +129,17 @@ def test_all_post_docs_returns_every_doc(app_ctx):
     assert len(docs) == 2
     assert doc1 in docs
     assert doc2 in docs
+
+
+def test_upsert_user_creates_then_updates_by_google_sub(app_ctx):
+    import db
+    first = db.upsert_user("sub-1", "a@example.com", "A", None)
+    again = db.upsert_user("sub-1", "a2@example.com", "A2", "https://pic/a")
+    assert again == {"id": first["id"], "email": "a2@example.com", "name": "A2",
+                     "avatar_url": "https://pic/a"}
+    assert db.find_user(first["id"]) == again
+
+
+def test_find_user_unknown_is_none(app_ctx):
+    import db
+    assert db.find_user(999999) is None
