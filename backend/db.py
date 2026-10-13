@@ -47,49 +47,56 @@ DEFAULT_TOPICS = [
 ]
 
 
-def _seed_if_empty(conn):
-    if conn.execute("select count(*) as c from topics").fetchone()["c"]:
+def _seed_if_empty(conn, user_id):
+    """Give a user the default topics the first time they have none."""
+    if conn.execute(
+        "select count(*) as c from topics where user_id=%s", (user_id,)
+    ).fetchone()["c"]:
         return
     for pos, t in enumerate(DEFAULT_TOPICS):
         conn.execute(
-            "insert into topics (slug, name, color, layout, fields, position) "
-            "values (%s, %s, %s, %s, %s, %s) on conflict (slug) do nothing",
-            (t["slug"], t["name"], t["color"], t["layout"], Jsonb(t["fields"]), pos),
+            "insert into topics (user_id, slug, name, color, layout, fields, position) "
+            "values (%s, %s, %s, %s, %s, %s, %s) on conflict (user_id, slug) do nothing",
+            (user_id, t["slug"], t["name"], t["color"], t["layout"],
+             Jsonb(t["fields"]), pos),
         )
 
 
-def load_topics():
+def load_topics(user_id):
     conn = get_conn()
-    _seed_if_empty(conn)
+    _seed_if_empty(conn, user_id)
     rows = conn.execute(
-        "select slug, name, color, layout, fields from topics order by position"
+        "select slug, name, color, layout, fields from topics "
+        "where user_id=%s order by position",
+        (user_id,),
     ).fetchall()
     return [dict(r) for r in rows]
 
 
-def find_topic(slug):
-    return next((t for t in load_topics() if t["slug"] == slug), None)
+def find_topic(user_id, slug):
+    return next((t for t in load_topics(user_id) if t["slug"] == slug), None)
 
 
-def add_topic(topic):
+def add_topic(user_id, topic):
     conn = get_conn()
     pos = conn.execute(
-        "select coalesce(max(position), -1) + 1 as p from topics"
+        "select coalesce(max(position), -1) + 1 as p from topics where user_id=%s",
+        (user_id,),
     ).fetchone()["p"]
     conn.execute(
-        "insert into topics (slug, name, color, layout, fields, position) "
-        "values (%s, %s, %s, %s, %s, %s)",
-        (topic["slug"], topic["name"], topic["color"], topic["layout"],
+        "insert into topics (user_id, slug, name, color, layout, fields, position) "
+        "values (%s, %s, %s, %s, %s, %s, %s)",
+        (user_id, topic["slug"], topic["name"], topic["color"], topic["layout"],
          Jsonb(topic["fields"]), pos),
     )
 
 
-def set_topic_layout(slug, layout):
+def set_topic_layout(user_id, slug, layout):
     conn = get_conn()
     row = conn.execute(
-        "update topics set layout=%s where slug=%s "
+        "update topics set layout=%s where user_id=%s and slug=%s "
         "returning slug, name, color, layout, fields",
-        (layout, slug),
+        (layout, user_id, slug),
     ).fetchone()
     return dict(row) if row else None
 
@@ -100,72 +107,79 @@ def _flatten(row):
     return entry
 
 
-def next_entry_id(slug):
+def next_entry_id(user_id, slug):
     conn = get_conn()
     return conn.execute(
-        "select coalesce(max(id), 0) + 1 as next from entries where topic_slug=%s",
-        (slug,),
+        "select coalesce(max(id), 0) + 1 as next from entries "
+        "where user_id=%s and topic_slug=%s",
+        (user_id, slug),
     ).fetchone()["next"]
 
 
-def load_entries(slug):
+def load_entries(user_id, slug):
     conn = get_conn()
     rows = conn.execute(
-        'select id, date, image, "values" from entries where topic_slug=%s order by id',
-        (slug,),
+        'select id, date, image, "values" from entries '
+        "where user_id=%s and topic_slug=%s order by id",
+        (user_id, slug),
     ).fetchall()
     return [_flatten(r) for r in rows]
 
 
-def find_entry(slug, entry_id):
+def find_entry(user_id, slug, entry_id):
     conn = get_conn()
     row = conn.execute(
-        'select id, date, image, "values" from entries where topic_slug=%s and id=%s',
-        (slug, entry_id),
+        'select id, date, image, "values" from entries '
+        "where user_id=%s and topic_slug=%s and id=%s",
+        (user_id, slug, entry_id),
     ).fetchone()
     return _flatten(row) if row else None
 
 
-def save_entry(slug, entry):
+def save_entry(user_id, slug, entry):
     values = {k: v for k, v in entry.items()
               if k not in ("id", "date", "image", "body")}
     conn = get_conn()
     conn.execute(
-        'insert into entries (topic_slug, id, date, image, "values") '
-        'values (%s, %s, %s, %s, %s) '
-        'on conflict (topic_slug, id) do update set '
+        'insert into entries (user_id, topic_slug, id, date, image, "values") '
+        "values (%s, %s, %s, %s, %s, %s) "
+        "on conflict (user_id, topic_slug, id) do update set "
         'date = excluded.date, image = excluded.image, "values" = excluded."values"',
-        (slug, entry["id"], entry.get("date", ""), entry.get("image"), Jsonb(values)),
+        (user_id, slug, entry["id"], entry.get("date", ""), entry.get("image"),
+         Jsonb(values)),
     )
 
 
-def load_post(slug, entry_id):
+def load_post(user_id, slug, entry_id):
     conn = get_conn()
     row = conn.execute(
-        "select doc from posts where topic_slug=%s and entry_id=%s",
-        (slug, entry_id),
+        "select doc from posts where user_id=%s and topic_slug=%s and entry_id=%s",
+        (user_id, slug, entry_id),
     ).fetchone()
     return row["doc"] if row else None
 
 
-def save_post(slug, entry_id, doc):
+def save_post(user_id, slug, entry_id, doc):
     conn = get_conn()
     conn.execute(
-        "insert into posts (topic_slug, entry_id, doc) values (%s, %s, %s) "
-        "on conflict (topic_slug, entry_id) do update set doc = excluded.doc",
-        (slug, entry_id, Jsonb(doc)),
+        "insert into posts (user_id, topic_slug, entry_id, doc) values (%s, %s, %s, %s) "
+        "on conflict (user_id, topic_slug, entry_id) do update set doc = excluded.doc",
+        (user_id, slug, entry_id, Jsonb(doc)),
     )
 
 
-def delete_entry(slug, entry_id):
+def delete_entry(user_id, slug, entry_id):
     """The posts row (if any) goes with it via the FK's on delete cascade."""
     conn = get_conn()
     conn.execute(
-        "delete from entries where topic_slug=%s and id=%s",
-        (slug, entry_id),
+        "delete from entries where user_id=%s and topic_slug=%s and id=%s",
+        (user_id, slug, entry_id),
     )
 
 
+# These two deliberately span every user: an uploaded image is only deleted
+# when *nobody* references it any more (see app.delete_entry). Phase 3 gives
+# each user their own storage prefix and narrows this.
 def all_entry_images():
     conn = get_conn()
     rows = conn.execute(

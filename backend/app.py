@@ -83,7 +83,7 @@ def valid_body(body):
 def with_body(slug, entry):
     """API view of a stored entry: join the post body in if one exists."""
     out = dict(entry)
-    doc = db.load_post(slug, entry["id"])
+    doc = db.load_post(g.user_id, slug, entry["id"])
     if doc is not None:
         out["body"] = doc
     return out
@@ -112,7 +112,7 @@ def image_urls_in(doc):
 
 
 def referenced_image_urls():
-    """Every image URL still referenced anywhere, across all topics: hero
+    """Every image URL still referenced anywhere, by any user: hero
     images plus in-body figures. See the call site in delete_entry for the
     ordering requirement.
     """
@@ -127,7 +127,7 @@ def referenced_image_urls():
 @app.route("/api/topics", methods=["GET"])
 @auth.login_required
 def get_topics():
-    return jsonify(db.load_topics())
+    return jsonify(db.load_topics(g.user_id))
 
 
 @app.route("/api/topics", methods=["POST"])
@@ -138,7 +138,7 @@ def add_topic():
     slug = slugify(name)
     if not slug:
         return jsonify({"error": "A topic name is required."}), 400
-    if db.find_topic(slug):
+    if db.find_topic(g.user_id, slug):
         return jsonify({"error": f"A topic '{name}' already exists."}), 409
 
     color = data.get("color")
@@ -162,14 +162,14 @@ def add_topic():
         )
 
     topic = {"slug": slug, "name": name, "color": color, "layout": layout, "fields": fields}
-    db.add_topic(topic)
+    db.add_topic(g.user_id, topic)
     return jsonify(topic), 201
 
 
 @app.route("/api/topics/<slug>", methods=["PATCH"])
 @auth.login_required
 def update_topic(slug):
-    topic = db.find_topic(slug)
+    topic = db.find_topic(g.user_id, slug)
     if not topic:
         return jsonify({"error": "Unknown topic."}), 404
 
@@ -177,7 +177,7 @@ def update_topic(slug):
     if "layout" in data:
         if data["layout"] not in LAYOUTS:
             return jsonify({"error": "Invalid layout."}), 400
-        topic = db.set_topic_layout(slug, data["layout"])
+        topic = db.set_topic_layout(g.user_id, slug, data["layout"])
 
     return jsonify(topic)
 
@@ -220,21 +220,21 @@ def sign_upload():
 @app.route("/api/topics/<slug>/entries", methods=["GET"])
 @auth.login_required
 def get_entries(slug):
-    if not db.find_topic(slug):
+    if not db.find_topic(g.user_id, slug):
         return jsonify({"error": "Unknown topic."}), 404
-    return jsonify([with_body(slug, e) for e in db.load_entries(slug)])
+    return jsonify([with_body(slug, e) for e in db.load_entries(g.user_id, slug)])
 
 
 @app.route("/api/topics/<slug>/entries", methods=["POST"])
 @auth.login_required
 def add_entry(slug):
-    topic = db.find_topic(slug)
+    topic = db.find_topic(g.user_id, slug)
     if not topic:
         return jsonify({"error": "Unknown topic."}), 404
 
     data = request.get_json(force=True)
     entry = {
-        "id": db.next_entry_id(slug),
+        "id": db.next_entry_id(g.user_id, slug),
         "date": data.get("date", ""),
         "image": data.get("image") or None,
     }
@@ -246,16 +246,16 @@ def add_entry(slug):
         else:
             entry[key] = val if val is not None else ""
 
-    db.save_entry(slug, entry)
+    db.save_entry(g.user_id, slug, entry)
     return jsonify(entry), 201
 
 
 @app.route("/api/topics/<slug>/entries/<int:entry_id>", methods=["GET"])
 @auth.login_required
 def get_entry(slug, entry_id):
-    if not db.find_topic(slug):
+    if not db.find_topic(g.user_id, slug):
         return jsonify({"error": "Unknown topic."}), 404
-    entry = db.find_entry(slug, entry_id)
+    entry = db.find_entry(g.user_id, slug, entry_id)
     if not entry:
         return jsonify({"error": "Unknown entry."}), 404
     return jsonify(with_body(slug, entry))
@@ -264,11 +264,11 @@ def get_entry(slug, entry_id):
 @app.route("/api/topics/<slug>/entries/<int:entry_id>", methods=["PATCH"])
 @auth.login_required
 def update_entry(slug, entry_id):
-    topic = db.find_topic(slug)
+    topic = db.find_topic(g.user_id, slug)
     if not topic:
         return jsonify({"error": "Unknown topic."}), 404
 
-    entry = db.find_entry(slug, entry_id)
+    entry = db.find_entry(g.user_id, slug, entry_id)
     if not entry:
         return jsonify({"error": "Unknown entry."}), 404
 
@@ -291,29 +291,29 @@ def update_entry(slug, entry_id):
         body = data["body"]
         if not valid_body(body):
             return jsonify({"error": "Invalid post body."}), 400
-        db.save_post(slug, entry_id, body)
+        db.save_post(g.user_id, slug, entry_id, body)
 
-    db.save_entry(slug, entry)
+    db.save_entry(g.user_id, slug, entry)
     return jsonify(with_body(slug, entry))
 
 
 @app.route("/api/topics/<slug>/entries/<int:entry_id>", methods=["DELETE"])
 @auth.login_required
 def delete_entry(slug, entry_id):
-    if not db.find_topic(slug):
+    if not db.find_topic(g.user_id, slug):
         return jsonify({"error": "Unknown topic."}), 404
 
-    entry = db.find_entry(slug, entry_id)
+    entry = db.find_entry(g.user_id, slug, entry_id)
     if not entry:
         return jsonify({"error": "Unknown entry."}), 404
 
     # Gather this entry's images before it's gone, so we know what *might*
     # become orphaned.
-    candidates = image_urls_in(db.load_post(slug, entry_id))
+    candidates = image_urls_in(db.load_post(g.user_id, slug, entry_id))
     if entry.get("image"):
         candidates.add(entry["image"])
 
-    db.delete_entry(slug, entry_id)  # posts row cascades with it
+    db.delete_entry(g.user_id, slug, entry_id)  # posts row cascades with it
 
     # Only now, with the row already gone, can "is this still referenced?"
     # be answered correctly -- otherwise the entry being deleted would count
