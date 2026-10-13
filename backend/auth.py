@@ -5,11 +5,12 @@ can flip them with monkeypatch.setenv.
 """
 import hmac
 import os
+import re
 from functools import wraps
 
 from authlib.integrations.base_client import OAuthError
 from authlib.integrations.flask_client import OAuth
-from flask import Blueprint, jsonify, redirect, request, session, url_for
+from flask import Blueprint, g, jsonify, redirect, request, session, url_for
 from joserfc.errors import JoseError
 
 import db
@@ -52,8 +53,8 @@ def safe_next(value):
 
 
 def has_service_token():
-    """The MCP server's bearer token. Phase 1 only: Phase 3 replaces it with
-    a per-user identity."""
+    """The MCP server's bearer token. Phase 3 replaces it with a per-user
+    credential."""
     expected = os.environ.get("MCP_SERVICE_TOKEN")
     if not expected:
         return False
@@ -61,13 +62,45 @@ def has_service_token():
     return scheme.lower() == "bearer" and hmac.compare_digest(token.encode(), expected.encode())
 
 
+# A positive integer that fits a Postgres bigint; anything else is refused
+# before it reaches a query.
+ACTING_USER_RE = re.compile(r"[1-9][0-9]{0,17}")
+
+
+def _acting_user():
+    """The user the MCP server says it acts for, if that user exists. Only
+    trusted alongside a valid service token."""
+    raw = request.headers.get("X-Acting-User", "")
+    if not ACTING_USER_RE.fullmatch(raw):
+        return None
+    user = db.find_user(int(raw))
+    return user["id"] if user else None
+
+
+def current_user_id():
+    """Whose data this request may touch, or None.
+
+    The session cookie is signed, so its user_id is trusted as-is. The
+    service token only identifies the MCP server; X-Acting-User says which
+    user it is acting for.
+    """
+    user_id = session.get("user_id")
+    if user_id is not None:
+        return user_id
+    if has_service_token():
+        return _acting_user()
+    return None
+
+
 def login_required(fn):
-    """Signed in (the session cookie is signed, so its user_id is trusted)
-    or the MCP service token."""
+    """Refuse the request unless current_user_id() names someone; routes
+    read that id from g.user_id."""
     @wraps(fn)
     def wrapper(*args, **kwargs):
-        if session.get("user_id") is None and not has_service_token():
+        user_id = current_user_id()
+        if user_id is None:
             return jsonify({"error": "Sign in to continue."}), 401
+        g.user_id = user_id
         return fn(*args, **kwargs)
 
     return wrapper

@@ -7,6 +7,14 @@ TEST_DATABASE_URL = os.environ.get("TEST_DATABASE_URL")
 SCHEMA_PATH = os.path.join(os.path.dirname(__file__), "schema.sql")
 
 
+def make_user(sub, email):
+    """Insert (or refresh) a users row and return its id."""
+    import app
+    import db
+    with app.app.app_context():
+        return db.upsert_user(sub, email, None, None)["id"]
+
+
 @pytest.fixture(scope="session")
 def _schema():
     if not TEST_DATABASE_URL:
