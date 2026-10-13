@@ -83,3 +83,14 @@ def client(test_db, anon_client):
     with anon_client.session_transaction() as s:
         s["user_id"] = user["id"]
     return anon_client
+
+
+@pytest.fixture()
+def second_client(test_db, anon_client):
+    """A different signed-in user, with its own cookie jar."""
+    import app
+    uid = make_user("sub-second", "second@example.com")
+    c = app.app.test_client()
+    with c.session_transaction() as s:
+        s["user_id"] = uid
+    return c
