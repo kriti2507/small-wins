@@ -1,6 +1,4 @@
 """One user can never see or change another user's data."""
-import pytest
-
 import app as app_module
 from conftest import make_user
 
@@ -71,6 +69,36 @@ def test_another_users_entry_is_not_found_and_stays_untouched(client, second_cli
     assert mine["body"] == DOC
 
 
+def test_same_slug_and_entry_id_stay_separate(client, second_client):
+    assert add_run(client, "Mine") == 1
+    assert add_run(second_client, "Theirs") == 1
+    url = "/api/topics/runs/entries/1"
+
+    mine_body = DOC
+    theirs_body = {"type": "doc", "content": []}
+    assert client.patch(url, json={"body": mine_body}).status_code == 200
+    assert second_client.patch(url, json={"body": theirs_body}).status_code == 200
+
+    mine = client.get(url)
+    assert mine.status_code == 200
+    assert mine.get_json()["title"] == "Mine"
+    assert mine.get_json()["body"] == mine_body
+
+    theirs = second_client.get(url)
+    assert theirs.status_code == 200
+    assert theirs.get_json()["title"] == "Theirs"
+    assert theirs.get_json()["body"] == theirs_body
+
+    assert second_client.delete(url).status_code == 200
+
+    mine_after = client.get(url)
+    assert mine_after.status_code == 200
+    assert mine_after.get_json()["title"] == "Mine"
+    assert mine_after.get_json()["body"] == mine_body
+
+    assert second_client.get(url).status_code == 404
+
+
 def test_deleting_an_entry_keeps_an_image_another_user_still_uses(client, second_client, monkeypatch):
     monkeypatch.setenv("SUPABASE_URL", "https://proj.supabase.co")
     monkeypatch.setenv("SUPABASE_SERVICE_KEY", "svc")
@@ -80,12 +108,15 @@ def test_deleting_an_entry_keeps_an_image_another_user_still_uses(client, second
 
     shared = BUCKET_PREFIX + "shared.jpg"
     mine = add_run(client)
-    client.patch(f"/api/topics/runs/entries/{mine}", json={"image": shared})
+    assert client.patch(f"/api/topics/runs/entries/{mine}", json={"image": shared}).status_code == 200
     theirs = add_run(second_client)
-    second_client.patch(f"/api/topics/runs/entries/{theirs}", json={"image": shared})
+    assert second_client.patch(f"/api/topics/runs/entries/{theirs}", json={"image": shared}).status_code == 200
 
     assert client.delete(f"/api/topics/runs/entries/{mine}").status_code == 200
     assert "shared.jpg" not in deleted
+
+    assert second_client.delete(f"/api/topics/runs/entries/{theirs}").status_code == 200
+    assert "shared.jpg" in deleted
 
 
 def test_service_token_sees_only_the_acting_users_data(db_anon_client, monkeypatch):
