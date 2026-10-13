@@ -217,9 +217,11 @@ def test_delete_entry_removes_it(client):
 
 def test_delete_entry_cascades_the_post_body(client):
     import db
+    with client.session_transaction() as s:
+        uid = s["user_id"]
     entry_id = make_entry(client)
     client.patch(f"/api/topics/runs/entries/{entry_id}", json={"body": DOC})
-    assert db.load_post("runs", entry_id) == DOC
+    assert db.load_post(uid, "runs", entry_id) == DOC
 
     res = client.delete(f"/api/topics/runs/entries/{entry_id}")
     assert res.status_code == 200
@@ -227,7 +229,7 @@ def test_delete_entry_cascades_the_post_body(client):
     # Querying the posts table directly (rather than just re-GETting the
     # entry) proves the FK cascade actually ran the delete, not merely that
     # the entries row is gone.
-    assert db.load_post("runs", entry_id) is None
+    assert db.load_post(uid, "runs", entry_id) is None
 
 
 def test_delete_entry_unknown_topic_404(client):
