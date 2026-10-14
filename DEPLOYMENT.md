@@ -175,8 +175,8 @@ topics;` (and the same for `entries`, `posts`), or a Table Editor export.
    header has the exact steps (what to replace, how to read success vs.
    failure). If Vercel auto-deploys the production branch on push/merge, run
    the migration right before merging, or have it queued up and run it the
-   moment the deploy goes live — the currently deployed (old) code fails even
-   on reads once the keys change.
+   moment the deploy goes live — the new code fails even on reads until the
+   migration has run.
 6. Deploy the Phase 2 code immediately. The currently deployed code fails
    against the new keys and the new code fails against the old keys, so
    expect errors in the gap between migration and deploy. Deploy the whole
