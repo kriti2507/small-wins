@@ -122,7 +122,10 @@ class SmallWinsOAuthProvider:
 
     async def load_authorization_code(self, client, authorization_code: str) -> AuthorizationCode | None:
         data, issued = self._loads("code", authorization_code, max_age=CODE_TTL)
-        if data is None:
+        if data is None or not data.get("subject"):
+            # No user to act as: `approve()` always sets one, so this can only
+            # be a forged or otherwise malformed code. Treat it as unknown
+            # rather than handing out a subject-less authorization code.
             return None
         return AuthorizationCode(
             code=authorization_code,
@@ -154,13 +157,20 @@ class SmallWinsOAuthProvider:
 
     async def load_access_token(self, token: str) -> AccessToken | None:
         claims, issued = self._loads("access", token, max_age=ACCESS_TTL)
-        if claims is None:
+        if claims is None or not claims.get("subject"):
+            # A token minted before the subject claim existed (or with it
+            # blanked out) can't say who it acts for. Returning None here
+            # makes the SDK answer 401, so the client re-runs OAuth instead of
+            # silently refreshing a subject-less token forever.
             return None
         return AccessToken(token=token, expires_at=int(issued + ACCESS_TTL), **claims)
 
     async def load_refresh_token(self, client, refresh_token: str) -> RefreshToken | None:
         claims, issued = self._loads("refresh", refresh_token, max_age=REFRESH_TTL)
-        if claims is None:
+        if claims is None or not claims.get("subject"):
+            # Same reasoning as load_access_token: refusing the refresh token
+            # itself forces re-authentication instead of an endless loop of
+            # subject-less access tokens.
             return None
         return RefreshToken(token=refresh_token, expires_at=int(issued + REFRESH_TTL), **claims)
 
