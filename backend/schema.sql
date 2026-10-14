@@ -40,3 +40,11 @@ create table posts (
   foreign key (user_id, topic_slug, entry_id)
     references entries(user_id, topic_slug, id) on delete cascade
 );
+
+-- RLS on with no policies: Supabase's auto-generated REST API can't read or
+-- write these tables. Flask connects as the table owner, which RLS doesn't
+-- apply to, so the app is unaffected; its per-user filtering is in db.py.
+alter table users   enable row level security;
+alter table topics  enable row level security;
+alter table entries enable row level security;
+alter table posts   enable row level security;
