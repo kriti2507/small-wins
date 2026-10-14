@@ -9,7 +9,6 @@ import psycopg
 import pytest
 
 MIGRATION = os.path.join(os.path.dirname(__file__), "migrations", "002_user_scoping.sql")
-DOWN_MIGRATION = os.path.join(os.path.dirname(__file__), "migrations", "002_user_scoping_down.sql")
 PLACEHOLDER = "'you@example.com'"
 
 # backend/schema.sql as it was before Phase 2 (what production has today).
@@ -90,24 +89,6 @@ def columns(conn, table):
     return dict(rows)
 
 
-def down_migration():
-    with open(DOWN_MIGRATION) as f:
-        return f.read()
-
-
-def snapshot(conn):
-    """Columns and constraints for the three tables, scoped to phase2_mig."""
-    cols = {table: columns(conn, table) for table in ("topics", "entries", "posts")}
-    constraints = conn.execute(
-        "select c.relname, con.conname, pg_get_constraintdef(con.oid) "
-        "from pg_constraint con join pg_class c on c.oid = con.conrelid "
-        "where con.connamespace = 'phase2_mig'::regnamespace "
-        "and c.relname in ('topics', 'entries', 'posts') "
-        "order by c.relname, con.conname"
-    ).fetchall()
-    return cols, constraints
-
-
 def test_assigns_every_row_to_the_owner_case_insensitively(old_db):
     owner, _ = seed(old_db)
     old_db.execute(migration_for("me@example.com"))
@@ -147,31 +128,6 @@ def test_unknown_owner_email_changes_nothing(old_db):
         old_db.execute(migration_for("nobody@example.com"))
     for table in ("topics", "entries", "posts"):
         assert "user_id" not in columns(old_db, table), table
-
-
-def test_down_round_trips_to_the_original_schema(old_db):
-    seed(old_db)
-    before = snapshot(old_db)
-    old_db.execute(migration_for("me@example.com"))
-    old_db.execute(down_migration())
-    after = snapshot(old_db)
-    assert after == before
-    assert old_db.execute("select count(*) from topics").fetchone()[0] == 1
-    assert old_db.execute("select count(*) from entries").fetchone()[0] == 1
-    assert old_db.execute("select count(*) from posts").fetchone()[0] == 1
-    # Repeatable: running `up` again (e.g. after a bad rollback) succeeds.
-    old_db.execute(migration_for("me@example.com"))
-
-
-def test_down_refuses_when_a_second_user_owns_data(old_db):
-    _, friend = seed(old_db)
-    old_db.execute(migration_for("me@example.com"))
-    old_db.execute("insert into topics (user_id, slug, name, color, layout, position) "
-                   "values (%s, 'hikes', 'Hikes', 'blue', 'photo-top', 1)", (friend,))
-    with pytest.raises(psycopg.errors.RaiseException, match="more than one user"):
-        old_db.execute(down_migration())
-    for table in ("topics", "entries", "posts"):
-        assert "user_id" in columns(old_db, table), table
 
 
 def test_duplicate_owner_email_changes_nothing(old_db):

@@ -2,7 +2,7 @@ import os
 
 import psycopg
 from psycopg.rows import dict_row
-from psycopg.types.json import Jsonb  # noqa: F401  (used by later tasks)
+from psycopg.types.json import Jsonb
 
 # Read at call time so tests can monkeypatch db.DATABASE_URL (mirrors the
 # file-storage era, where module globals were monkeypatched in tests).

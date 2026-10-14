@@ -19,6 +19,10 @@ def make_user(sub, email):
 def _schema():
     if not TEST_DATABASE_URL:
         pytest.skip("set TEST_DATABASE_URL to run database-backed tests")
+    # The next lines drop every table. Never let that reach a real Supabase
+    # project; tests belong on a throwaway local Postgres.
+    if "supabase" in TEST_DATABASE_URL.lower():
+        pytest.exit("TEST_DATABASE_URL points at Supabase; refusing to wipe it", returncode=2)
     with open(SCHEMA_PATH) as f:
         ddl = f.read()
     with psycopg.connect(TEST_DATABASE_URL, autocommit=True) as conn:
