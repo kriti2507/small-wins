@@ -108,8 +108,6 @@ def login_required(fn):
 
 def check_config(environ, secret_key):
     """Refuse to start with settings that would leave production open."""
-    if environ.get("DEV_LOGIN_EMAIL") and environ.get("VERCEL"):
-        raise RuntimeError("DEV_LOGIN_EMAIL must never be set on Vercel")
     if environ.get("GOOGLE_CLIENT_ID") and secret_key == DEV_SECRET:
         raise RuntimeError("SECRET_KEY must be set when Google sign-in is configured")
     if environ.get("VERCEL") and secret_key == DEV_SECRET:
@@ -155,10 +153,6 @@ def _finish_sign_in(user):
 @bp.route("/api/auth/google", methods=["GET"])
 def google_login():
     session["next"] = safe_next(request.args.get("next"))
-    dev_email = os.environ.get("DEV_LOGIN_EMAIL")
-    if dev_email:
-        # check_config guarantees this never runs on Vercel.
-        return _finish_sign_in(db.upsert_user(f"dev:{dev_email}", dev_email, "Dev", None))
     return oauth.google.authorize_redirect(url_for("auth.google_callback", _external=True))
 
 

@@ -53,7 +53,7 @@ def anon_client(monkeypatch):
     config can't change test results.
     """
     import app
-    for name in ("DEV_LOGIN_EMAIL", "MCP_SERVICE_TOKEN", "ALLOWED_EMAILS"):
+    for name in ("MCP_SERVICE_TOKEN", "ALLOWED_EMAILS"):
         monkeypatch.delenv(name, raising=False)
     app.app.config["TESTING"] = True
     return app.app.test_client()

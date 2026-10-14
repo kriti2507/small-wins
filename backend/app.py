@@ -22,8 +22,7 @@ app = Flask(__name__, static_folder=None)
 app.config["MAX_CONTENT_LENGTH"] = 5 * 1024 * 1024
 
 # --- Auth ------------------------------------------------------------------
-# Google sign-in lives in auth.py. Local dev sets DEV_LOGIN_EMAIL instead of
-# Google credentials (see backend/.env.example).
+# Google sign-in lives in auth.py; local dev uses it too (see README).
 app.secret_key = os.environ.get("SECRET_KEY", auth.DEV_SECRET)
 auth.check_config(os.environ, app.secret_key)
 
@@ -336,4 +335,4 @@ def delete_entry(slug, entry_id):
 
 
 if __name__ == "__main__":
-    app.run(debug=bool(os.environ.get("DEV_LOGIN_EMAIL")), port=5000)
+    app.run(debug=True, port=5000)  # local only; Vercel imports `app` instead

@@ -22,7 +22,9 @@ The backend talks to Supabase (Postgres + Storage). Copy
 `backend/.env.example` to `backend/.env` and fill in `DATABASE_URL`,
 `SUPABASE_URL`, `SUPABASE_SERVICE_KEY`, and `SUPABASE_BUCKET` (use a
 **separate dev Supabase project** so local work never touches prod data).
-Set `DEV_LOGIN_EMAIL=you@example.com` locally so sign-in works without Google.
+Sign-in uses Google locally too: set `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`,
+`ALLOWED_EMAILS` and `SECRET_KEY`, and add the local callback URL to the
+OAuth client's authorized redirect URIs.
 
 ```sh
 pip install -r backend/requirements.txt
@@ -72,6 +74,3 @@ needs `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `ALLOWED_EMAILS` and
 `SECRET_KEY` (signs the 30-day session cookie); see `DEPLOYMENT.md` step 2.
 Behind a reverse proxy, set `TRUST_PROXY=1` so the Google callback URL is built
 with `https`.
-
-Local dev: set `DEV_LOGIN_EMAIL` instead of Google credentials. The app
-refuses to start if `DEV_LOGIN_EMAIL` is set on Vercel.

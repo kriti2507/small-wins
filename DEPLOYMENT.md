@@ -51,8 +51,7 @@ In the Vercel project → Settings → Environment Variables, set:
 | `TRUST_PROXY` | `1` |
 | `MCP_SERVICE_TOKEN` | only if using the MCP server, see below |
 
-Never commit these or expose the service key to the frontend. Never set
-`DEV_LOGIN_EMAIL` on Vercel — the app refuses to start if you do.
+Never commit these or expose the service key to the frontend.
 
 ## 4. Deploy
 
@@ -137,8 +136,10 @@ Testing, to its **Test users**), redeploy.
 
 ## Notes
 
-- Local dev: set `DEV_LOGIN_EMAIL=you@example.com` in `backend/.env` and
-  "Sign in with Google" signs you in as that email without contacting Google.
+- Local dev signs in with Google too: put the Google credentials,
+  `ALLOWED_EMAILS` and `SECRET_KEY` in `backend/.env`, and add
+  `http://localhost:5173/api/auth/google/callback` (or `:5000` if you hit
+  Flask directly) to the OAuth client's authorized redirect URIs.
 
 ## Per-user data (Phase 2) — one-time upgrade
 
