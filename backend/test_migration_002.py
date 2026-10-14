@@ -128,3 +128,39 @@ def test_unknown_owner_email_changes_nothing(old_db):
         old_db.execute(migration_for("nobody@example.com"))
     for table in ("topics", "entries", "posts"):
         assert "user_id" not in columns(old_db, table), table
+
+
+def test_duplicate_owner_email_changes_nothing(old_db):
+    seed(old_db)
+    old_db.execute(
+        "insert into users (google_sub, email) values ('g-3', 'ME@example.com')"
+    )
+    with pytest.raises(psycopg.errors.RaiseException, match="More than one"):
+        old_db.execute(migration_for("me@example.com"))
+    for table in ("topics", "entries", "posts"):
+        assert "user_id" not in columns(old_db, table), table
+
+
+def test_a_failure_midway_changes_nothing(old_db):
+    seed(old_db)
+    old_db.execute(
+        "alter table topics rename constraint topics_pkey to topics_pkey_renamed"
+    )
+    with pytest.raises(psycopg.errors.UndefinedObject):
+        old_db.execute(migration_for("me@example.com"))
+    names = {
+        row[0]
+        for row in old_db.execute(
+            "select conname from pg_constraint "
+            "where connamespace = 'phase2_mig'::regnamespace"
+        ).fetchall()
+    }
+    for name in (
+        "posts_pkey",
+        "entries_pkey",
+        "posts_topic_slug_entry_id_fkey",
+        "entries_topic_slug_fkey",
+    ):
+        assert name in names, name
+    for table in ("topics", "entries", "posts"):
+        assert "user_id" not in columns(old_db, table), table
