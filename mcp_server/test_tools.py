@@ -2,11 +2,15 @@ import json
 
 import httpx
 import pytest
+from mcp.server.auth.middleware.auth_context import auth_context_var
+from mcp.server.auth.middleware.bearer_auth import AuthenticatedUser
+from mcp.server.auth.provider import AccessToken
 from mcp.server.mcpserver import MCPServer
 from mcp.server.mcpserver.exceptions import ToolError
 
 from flask_client import FlaskClient, SmallWinsError
-from tools import check_values, filter_entries, parse_date, register_tools
+from oauth import SCOPE
+from tools import acting_user, check_values, filter_entries, parse_date, register_tools
 
 pytestmark = pytest.mark.anyio
 
@@ -81,7 +85,11 @@ def flask():
 @pytest.fixture
 def server(flask):
     mcp = MCPServer(name="test")
-    register_tools(mcp, lambda: FlaskClient("https://sw.example.com", "svc", transport=httpx.MockTransport(flask)))
+    register_tools(
+        mcp,
+        lambda user_id: FlaskClient("https://sw.example.com", "svc", user_id, transport=httpx.MockTransport(flask)),
+        current_user=lambda: "7",
+    )
     return mcp
 
 
@@ -159,3 +167,56 @@ async def test_update_entry_needs_something_to_change(server, flask):
 
 async def test_flask_errors_reach_the_model(server):
     assert "Unknown topic." in await call_error(server, "get_entries", topic="nope")
+
+
+def as_token(subject):
+    token = AccessToken(token="t", client_id="c", scopes=[SCOPE], subject=subject)
+    return auth_context_var.set(AuthenticatedUser(token))
+
+
+def test_acting_user_is_the_tokens_subject():
+    reset = as_token("7")
+    try:
+        assert acting_user() == "7"
+    finally:
+        auth_context_var.reset(reset)
+
+
+@pytest.mark.parametrize("subject", [None, ""])
+def test_acting_user_without_a_subject_asks_to_reconnect(subject):
+    reset = as_token(subject)
+    try:
+        with pytest.raises(SmallWinsError, match="reconnect"):
+            acting_user()
+    finally:
+        auth_context_var.reset(reset)
+
+
+def test_acting_user_without_a_token_asks_to_reconnect():
+    with pytest.raises(SmallWinsError, match="reconnect"):
+        acting_user()
+
+
+async def test_tools_never_call_flask_without_an_acting_user(flask):
+    mcp = MCPServer(name="test")
+    made = []
+
+    def nobody():
+        raise SmallWinsError("Disconnect and reconnect Small Wins.")
+
+    register_tools(mcp, lambda user_id: made.append(user_id), current_user=nobody)
+    assert "reconnect" in await call_error(mcp, "list_topics")
+    assert made == []
+
+
+async def test_each_tool_call_acts_as_the_current_user(flask):
+    mcp = MCPServer(name="test")
+    made = []
+
+    def make(user_id):
+        made.append(user_id)
+        return FlaskClient("https://sw.example.com", "svc", user_id, transport=httpx.MockTransport(flask))
+
+    register_tools(mcp, make, current_user=lambda: "42")
+    await call(mcp, "list_topics")
+    assert made == ["42"]

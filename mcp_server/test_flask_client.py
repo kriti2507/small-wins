@@ -7,19 +7,21 @@ pytestmark = pytest.mark.anyio
 
 
 def client_for(handler):
-    return FlaskClient("https://sw.example.com", "svc-token", transport=httpx.MockTransport(handler))
+    return FlaskClient("https://sw.example.com", "svc-token", "7", transport=httpx.MockTransport(handler))
 
 
-async def test_sends_the_service_token_and_returns_json():
+async def test_sends_the_service_token_and_acting_user_and_returns_json():
     seen = {}
 
     def handler(request):
         seen["auth"] = request.headers["authorization"]
+        seen["acting"] = request.headers["x-acting-user"]
         seen["url"] = str(request.url)
         return httpx.Response(200, json=[{"slug": "books"}])
 
     assert await client_for(handler).list_topics() == [{"slug": "books"}]
-    assert seen == {"auth": "Bearer svc-token", "url": "https://sw.example.com/api/topics"}
+    assert seen == {"auth": "Bearer svc-token", "acting": "7",
+                    "url": "https://sw.example.com/api/topics"}
 
 
 async def test_writes_send_json_bodies():

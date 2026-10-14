@@ -2,6 +2,7 @@
 they can be tested without HTTP; the tools glue them to the Flask API."""
 from datetime import date as Date
 
+from mcp.server.auth.middleware.auth_context import get_access_token
 from mcp.types import ToolAnnotations
 
 from flask_client import SmallWinsError
@@ -55,11 +56,26 @@ def check_values(topic, values):
         )
 
 
-def register_tools(mcp, make_client):
-    """make_client() returns a fresh FlaskClient; each tool call gets its own."""
+def acting_user():
+    """The Small Wins user id this call acts for: the subject of the verified
+    access token (set when the user approved the connection)."""
+    token = get_access_token()
+    subject = token.subject if token else None
+    if not subject:
+        raise SmallWinsError(
+            "This connection isn't linked to a Small Wins account. "
+            "Disconnect and reconnect Small Wins."
+        )
+    return subject
+
+
+def register_tools(mcp, make_client, current_user=acting_user):
+    """make_client(user_id) returns a fresh FlaskClient acting as that user;
+    each tool call gets its own. current_user() names the user (tests swap
+    it out; in production it reads the request's access token)."""
 
     async def with_client(run):
-        client = make_client()
+        client = make_client(current_user())
         try:
             return await run(client)
         finally:

@@ -35,6 +35,7 @@ BOOKS = {"slug": "books", "name": "Books", "color": "green", "layout": "photo-to
 
 def fake_flask(request):
     assert request.headers["authorization"] == "Bearer svc-token"
+    assert request.headers["x-acting-user"] == "7"  # ME["id"], from the token's subject
     if request.url.path == "/api/topics":
         return httpx.Response(200, json=[BOOKS])
     if request.url.path == "/api/topics/books/entries":
@@ -46,7 +47,7 @@ def fake_flask(request):
 async def http():
     app = create_app(
         CONFIG,
-        lambda: FlaskClient(BASE, "svc-token", transport=httpx.MockTransport(fake_flask)),
+        lambda user_id: FlaskClient(BASE, "svc-token", user_id, transport=httpx.MockTransport(fake_flask)),
         check_user=fake_check_user,
     )
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url=BASE) as c:
