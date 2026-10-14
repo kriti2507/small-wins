@@ -13,7 +13,7 @@ import pytest
 from config import Config
 from flask_client import FlaskClient
 from mcp_app import create_app
-from oauth import SmallWinsOAuthProvider
+from oauth import SCOPE, SmallWinsOAuthProvider
 
 pytestmark = pytest.mark.anyio
 
@@ -35,6 +35,7 @@ BOOKS = {"slug": "books", "name": "Books", "color": "green", "layout": "photo-to
 
 def fake_flask(request):
     assert request.headers["authorization"] == "Bearer svc-token"
+    assert request.headers["x-acting-user"] == str(ME["id"])  # from the token's subject
     if request.url.path == "/api/topics":
         return httpx.Response(200, json=[BOOKS])
     if request.url.path == "/api/topics/books/entries":
@@ -46,7 +47,7 @@ def fake_flask(request):
 async def http():
     app = create_app(
         CONFIG,
-        lambda: FlaskClient(BASE, "svc-token", transport=httpx.MockTransport(fake_flask)),
+        lambda user_id: FlaskClient(BASE, "svc-token", user_id, transport=httpx.MockTransport(fake_flask)),
         check_user=fake_check_user,
     )
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url=BASE) as c:
@@ -155,6 +156,15 @@ async def test_tokens_from_the_full_flow_belong_to_the_signed_in_user(http):
     _, tokens = await connect(http)
     access = await SmallWinsOAuthProvider(CONFIG).load_access_token(tokens["access_token"])
     assert access.subject == "7"
+
+
+async def test_subject_less_access_tokens_are_refused(http):
+    # e.g. minted before the subject claim existed: there's no user to act
+    # as, so the SDK must treat it as invalid and the client re-authenticates.
+    provider = SmallWinsOAuthProvider(CONFIG)
+    token = provider._dumps("access", {"client_id": "c", "scopes": [SCOPE], "resource": f"{BASE}/mcp"})
+    res = await http.post("/mcp", headers={**MCP_HEADERS, "Authorization": f"Bearer {token}"}, json=rpc("tools/list"))
+    assert res.status_code == 401
 
 
 async def test_consent_post_without_a_session_is_refused(http):

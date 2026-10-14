@@ -37,11 +37,6 @@ def test_safe_next_replaces_anything_else_with_root(value):
 
 # --- check_config ----------------------------------------------------------------
 
-def test_check_config_refuses_dev_login_on_vercel():
-    with pytest.raises(RuntimeError, match="DEV_LOGIN_EMAIL"):
-        auth.check_config({"DEV_LOGIN_EMAIL": "me@example.com", "VERCEL": "1"}, "s3cret")
-
-
 def test_check_config_requires_a_real_secret_with_google():
     with pytest.raises(RuntimeError, match="SECRET_KEY"):
         auth.check_config({"GOOGLE_CLIENT_ID": "cid"}, auth.DEV_SECRET)
@@ -53,7 +48,6 @@ def test_check_config_requires_a_real_secret_on_vercel():
 
 
 def test_check_config_accepts_dev_and_production_setups():
-    auth.check_config({"DEV_LOGIN_EMAIL": "me@example.com"}, auth.DEV_SECRET)
     auth.check_config({"GOOGLE_CLIENT_ID": "cid", "VERCEL": "1"}, "s3cret")
     auth.check_config({}, auth.DEV_SECRET)
 
@@ -161,10 +155,8 @@ def test_unsafe_next_falls_back_to_root(db_anon_client, google, bad):
     assert sign_in(db_anon_client, bad).headers["Location"] == "/"
 
 
-def test_dev_login_skips_google(db_anon_client, google, monkeypatch):
+def test_a_leftover_dev_login_setting_no_longer_skips_google(db_anon_client, google, monkeypatch):
     monkeypatch.setenv("DEV_LOGIN_EMAIL", "dev@example.com")
     res = db_anon_client.get("/api/auth/google?next=/topic/runs")
-    assert res.status_code == 302
-    assert res.headers["Location"] == "/topic/runs"
-    assert google.redirect_uris == []
-    assert db_anon_client.get("/api/auth/me").get_json()["user"]["email"] == "dev@example.com"
+    assert res.headers["Location"].startswith("https://accounts.google.com/")
+    assert db_anon_client.get("/api/auth/me").status_code == 401

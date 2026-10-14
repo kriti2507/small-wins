@@ -16,10 +16,15 @@ class SmallWinsError(ToolError):
 
 
 class FlaskClient:
-    def __init__(self, base_url, service_token, transport=None):
+    def __init__(self, base_url, service_token, user_id, transport=None):
+        """user_id is the Small Wins user this client acts for; Flask only
+        trusts it alongside the service token."""
         self._http = httpx.AsyncClient(
             base_url=base_url,
-            headers={"Authorization": f"Bearer {service_token}"},
+            headers={
+                "Authorization": f"Bearer {service_token}",
+                "X-Acting-User": str(user_id),
+            },
             timeout=15,
             transport=transport,
         )

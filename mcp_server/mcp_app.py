@@ -18,8 +18,8 @@ INSTRUCTIONS = (
 def build_server(config, make_client=None, check_user=None):
     provider = SmallWinsOAuthProvider(config)
     if make_client is None:
-        def make_client():
-            return FlaskClient(config.api_url, config.service_token)
+        def make_client(user_id):
+            return FlaskClient(config.api_url, config.service_token, user_id)
     if check_user is None:
         async def check_user(cookie):
             return await signed_in_user(config.api_url, cookie)

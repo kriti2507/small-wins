@@ -7,6 +7,14 @@ TEST_DATABASE_URL = os.environ.get("TEST_DATABASE_URL")
 SCHEMA_PATH = os.path.join(os.path.dirname(__file__), "schema.sql")
 
 
+def make_user(sub, email):
+    """Insert (or refresh) a users row and return its id."""
+    import app
+    import db
+    with app.app.app_context():
+        return db.upsert_user(sub, email, None, None)["id"]
+
+
 @pytest.fixture(scope="session")
 def _schema():
     if not TEST_DATABASE_URL:
@@ -45,7 +53,7 @@ def anon_client(monkeypatch):
     config can't change test results.
     """
     import app
-    for name in ("DEV_LOGIN_EMAIL", "MCP_SERVICE_TOKEN", "ALLOWED_EMAILS"):
+    for name in ("MCP_SERVICE_TOKEN", "ALLOWED_EMAILS"):
         monkeypatch.delenv(name, raising=False)
     app.app.config["TESTING"] = True
     return app.app.test_client()
@@ -75,3 +83,14 @@ def client(test_db, anon_client):
     with anon_client.session_transaction() as s:
         s["user_id"] = user["id"]
     return anon_client
+
+
+@pytest.fixture()
+def second_client(test_db, anon_client):
+    """A different signed-in user, with its own cookie jar."""
+    import app
+    uid = make_user("sub-second", "second@example.com")
+    c = app.app.test_client()
+    with c.session_transaction() as s:
+        s["user_id"] = uid
+    return c

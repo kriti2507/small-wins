@@ -2,12 +2,15 @@
 
 Run once, from the repo root, with the Supabase env vars set:
 
-    DATABASE_URL=... SUPABASE_URL=... SUPABASE_SERVICE_KEY=... \\
-    SUPABASE_BUCKET=uploads .venv/bin/python backend/migrate_to_supabase.py
+    DATABASE_URL=... SUPABASE_URL=... SUPABASE_BUCKET=uploads \\
+    SUPABASE_SERVICE_KEY=... .venv/bin/python backend/migrate_to_supabase.py \\
+    --owner-user-id <users.id of the account that should own the data>
 
 Idempotent: upserts rows and re-uploads files, so re-running is safe.
-Prerequisite: schema.sql applied and the `uploads` bucket created.
+Prerequisite: schema.sql applied, the `uploads` bucket created, and the
+owner has signed in once (so their users row exists).
 """
+import argparse
 import json
 import os
 
@@ -94,16 +97,16 @@ def resolve_legacy_post(entry):
     return None
 
 
-def migrate(conn, url_map):
+def migrate(conn, url_map, owner_user_id):
     topics = load_json(os.path.join(DATA_DIR, "topics.json"), [])
     for pos, t in enumerate(topics):
         conn.execute(
-            "insert into topics (slug, name, color, layout, fields, position) "
-            "values (%s, %s, %s, %s, %s, %s) "
-            "on conflict (slug) do update set name=excluded.name, "
+            "insert into topics (user_id, slug, name, color, layout, fields, position) "
+            "values (%s, %s, %s, %s, %s, %s, %s) "
+            "on conflict (user_id, slug) do update set name=excluded.name, "
             "color=excluded.color, layout=excluded.layout, "
             "fields=excluded.fields, position=excluded.position",
-            (t["slug"], t["name"], t["color"], t.get("layout", "photo-top"),
+            (owner_user_id, t["slug"], t["name"], t["color"], t.get("layout", "photo-top"),
              Jsonb(t.get("fields", [])), pos),
         )
         slug = t["slug"]
@@ -113,24 +116,29 @@ def migrate(conn, url_map):
             values = {k: v for k, v in e.items()
                       if k not in ("id", "date", "image", "post", "body")}
             conn.execute(
-                'insert into entries (topic_slug, id, date, image, "values") '
-                "values (%s, %s, %s, %s, %s) "
-                "on conflict (topic_slug, id) do update set date=excluded.date, "
+                'insert into entries (user_id, topic_slug, id, date, image, "values") '
+                "values (%s, %s, %s, %s, %s, %s) "
+                "on conflict (user_id, topic_slug, id) do update set date=excluded.date, "
                 'image=excluded.image, "values"=excluded."values"',
-                (slug, e["id"], e.get("date", ""), image, Jsonb(values)),
+                (owner_user_id, slug, e["id"], e.get("date", ""), image, Jsonb(values)),
             )
             if doc is not None:
                 conn.execute(
-                    "insert into posts (topic_slug, entry_id, doc) values (%s, %s, %s) "
-                    "on conflict (topic_slug, entry_id) do update set doc=excluded.doc",
-                    (slug, e["id"], Jsonb(rewrite_srcs(doc, url_map))),
+                    "insert into posts (user_id, topic_slug, entry_id, doc) "
+                    "values (%s, %s, %s, %s) "
+                    "on conflict (user_id, topic_slug, entry_id) do update set doc=excluded.doc",
+                    (owner_user_id, slug, e["id"], Jsonb(rewrite_srcs(doc, url_map))),
                 )
 
 
 def main():
+    parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    parser.add_argument("--owner-user-id", type=int, required=True,
+                        help="users.id of the account that will own the imported data")
+    args = parser.parse_args()
     url_map = upload_all_images()
     with psycopg.connect(os.environ["DATABASE_URL"], autocommit=True) as conn:
-        migrate(conn, url_map)
+        migrate(conn, url_map, args.owner_user_id)
     print(f"migrated {len(url_map)} image(s) and all topics/entries/posts")
 
 

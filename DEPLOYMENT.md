@@ -51,21 +51,9 @@ In the Vercel project → Settings → Environment Variables, set:
 | `TRUST_PROXY` | `1` |
 | `MCP_SERVICE_TOKEN` | only if using the MCP server, see below |
 
-Never commit these or expose the service key to the frontend. Never set
-`DEV_LOGIN_EMAIL` on Vercel — the app refuses to start if you do.
+Never commit these or expose the service key to the frontend.
 
-## 4. Migrate existing data (once)
-
-With the same env vars exported locally, from the repo root:
-
-```sh
-.venv/bin/python backend/migrate_to_supabase.py
-```
-
-This uploads `backend/data/uploads/*` to Storage and loads all topics, entries,
-and posts into Postgres.
-
-## 5. Deploy
+## 4. Deploy
 
 ```sh
 vercel --prod
@@ -74,6 +62,24 @@ vercel --prod
 Verify: `curl -s -o /dev/null -w "%{http_code}\n" https://yourdomain/api/topics`
 → `401`. Open the site → you land on the sign-in page → **Sign in with Google**
 → your topics. A Google account not in `ALLOWED_EMAILS` sees "isn't invited".
+
+## 5. Migrate existing data (once, fresh installs only)
+
+`migrate_to_supabase.py` needs the owner's `users.id`, so sign in once as
+above first, then look it up:
+
+```sql
+select id from users where email = 'you@example.com';
+```
+
+With the same env vars exported locally, from the repo root:
+
+```sh
+.venv/bin/python backend/migrate_to_supabase.py --owner-user-id <id>
+```
+
+This uploads `backend/data/uploads/*` to Storage and loads all topics, entries,
+and posts into Postgres under that user.
 
 ## MCP server (optional)
 
@@ -95,7 +101,7 @@ Add to Vercel (Production and Preview):
 |-----|-------|
 | `APP_BASE_URL` | Public origin, e.g. `https://yourdomain` (no trailing slash) |
 | `MCP_TOKEN_SECRET` | from above; signs OAuth clients and tokens |
-| `MCP_SERVICE_TOKEN` | from above; lets the MCP function call the API (Phase 1: acts as the one signed-in owner) |
+| `MCP_SERVICE_TOKEN` | from above; identifies the MCP function to the API — it also needs `X-Acting-User` to say which signed-in user it's acting for |
 
 Redeploy.
 
@@ -130,5 +136,61 @@ Testing, to its **Test users**), redeploy.
 
 ## Notes
 
-- Local dev: set `DEV_LOGIN_EMAIL=you@example.com` in `backend/.env` and
-  "Sign in with Google" signs you in as that email without contacting Google.
+- Local dev signs in with Google too: put the Google credentials,
+  `ALLOWED_EMAILS` and `SECRET_KEY` in `backend/.env`, and add
+  `http://localhost:5173/api/auth/google/callback` (or `:5000` if you hit
+  Flask directly) to the OAuth client's authorized redirect URIs.
+
+## Per-user data (Phase 2) — one-time upgrade
+
+The Phase 2 code expects every topic/entry/post to have a `user_id`. Run the
+migration **before** deploying it, then deploy right away — see
+`backend/migrations/002_user_scoping.sql` for exact run instructions.
+
+**Rollback:** prefer `backend/migrations/002_user_scoping_down.sql` — it
+reverses the migration, but refuses once more than one user has data, so it's
+only valid before any friend has used the app. Redeploy the pre-Phase-2 code
+right after running it. Once friends have data, restoring a backup is the
+fallback. If Supabase backups aren't available on your plan, take a quick
+snapshot of the three tables first, e.g. `create table topics_pre2 as table
+topics;` (and the same for `entries`, `posts`), or a Table Editor export.
+
+1. Supabase → Database → Backups: confirm a recent backup exists, or take the
+   snapshot above if not.
+2. Make sure you have signed in to the live app at least once with your Google
+   account (the migration looks your `users` row up by email).
+3. Optional: confirm production's constraint names match what the migration
+   drops —
+   ```sql
+   select conrelid::regclass, conname from pg_constraint
+   where conrelid in ('topics'::regclass, 'entries'::regclass, 'posts'::regclass)
+   order by 1, 2;
+   ```
+   Expect `topics_pkey`, `entries_pkey`, `entries_topic_slug_fkey`,
+   `posts_pkey`, `posts_topic_slug_entry_id_fkey`. If they differ, stop —
+   nothing has changed yet.
+4. Any local/dev database with existing data needs this migration too (or
+   just recreate it from `backend/schema.sql`) — otherwise local Flask fails
+   against the old schema.
+5. Supabase → SQL Editor → run `backend/migrations/002_user_scoping.sql`. Its
+   header has the exact steps (what to replace, how to read success vs.
+   failure). If Vercel auto-deploys the production branch on push/merge, run
+   the migration right before merging, or have it queued up and run it the
+   moment the deploy goes live — the new code fails even on reads until the
+   migration has run.
+6. Deploy the Phase 2 code immediately. The currently deployed code fails
+   against the new keys and the new code fails against the old keys, so
+   expect errors in the gap between migration and deploy. Deploy the whole
+   branch together — from the first Phase 2 commit, Flask refuses the MCP
+   service token unless the MCP server sends `X-Acting-User`, which only the
+   later commits add, so a partial deploy breaks Claude's connection. If
+   Preview deployments share the production `DATABASE_URL`, older preview
+   builds will also break once the migration runs.
+7. Check: your topics show up on the web; in Claude, `list_topics` works (if
+   it says to reconnect, disconnect and reconnect Small Wins).
+8. Only now add friends to `ALLOWED_EMAILS`. Each new user starts with a
+   default "Runs" topic and sees only their own data. Note: uploaded images
+   are still readable by anyone who has the URL until Phase 3. Removing
+   someone from `ALLOWED_EMAILS` doesn't end their existing session (cookies
+   last up to 30 days) or MCP connection — they just keep working, still
+   scoped to only their own data.

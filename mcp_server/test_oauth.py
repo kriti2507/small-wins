@@ -195,3 +195,52 @@ async def test_the_user_rides_along_from_code_to_tokens_and_refresh(provider):
 
     renewed = await provider.exchange_refresh_token(client, refresh, [SCOPE])
     assert (await provider.load_access_token(renewed.access_token)).subject == "7"
+
+
+def token_claims(client_id="sdk-random-id", resource="https://sw.example.com/mcp", subject=None):
+    claims = {"client_id": client_id, "scopes": [SCOPE], "resource": resource}
+    if subject is not None:
+        claims["subject"] = subject
+    return claims
+
+
+@pytest.mark.parametrize("subject", [None, ""])
+async def test_access_token_without_a_subject_is_rejected(provider, subject):
+    # Minted before the subject claim existed, or with it blanked out: there's
+    # no user to act as, so this must not load as a usable access token.
+    token = provider._dumps("access", token_claims(subject=subject))
+    assert await provider.load_access_token(token) is None
+
+
+async def test_access_token_with_a_subject_still_loads(provider):
+    token = provider._dumps("access", token_claims(subject="7"))
+    loaded = await provider.load_access_token(token)
+    assert loaded.subject == "7"
+
+
+@pytest.mark.parametrize("subject", [None, ""])
+async def test_refresh_token_without_a_subject_is_rejected(provider, subject):
+    client = await provider.get_client((await registered(provider)).client_id)
+    token = provider._dumps("refresh", token_claims(client_id=client.client_id, subject=subject))
+    assert await provider.load_refresh_token(client, token) is None
+
+
+async def test_refresh_token_with_a_subject_still_loads(provider):
+    client = await provider.get_client((await registered(provider)).client_id)
+    token = provider._dumps("refresh", token_claims(client_id=client.client_id, subject="7"))
+    loaded = await provider.load_refresh_token(client, token)
+    assert loaded.subject == "7"
+
+
+@pytest.mark.parametrize("subject", [None, ""])
+async def test_authorization_code_without_a_subject_is_rejected(provider, subject):
+    client = await provider.get_client((await registered(provider)).client_id)
+    pending = {
+        "client_id": client.client_id, "client_name": client.client_name,
+        "redirect_uri": REDIRECT, "explicit": True, "code_challenge": "challenge",
+        "state": "xyz", "scopes": [SCOPE], "resource": "https://sw.example.com/mcp",
+    }
+    if subject is not None:
+        pending["subject"] = subject
+    code = provider._dumps("code", pending)
+    assert await provider.load_authorization_code(client, code) is None
