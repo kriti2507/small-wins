@@ -95,7 +95,7 @@ Add to Vercel (Production and Preview):
 |-----|-------|
 | `APP_BASE_URL` | Public origin, e.g. `https://yourdomain` (no trailing slash) |
 | `MCP_TOKEN_SECRET` | from above; signs OAuth clients and tokens |
-| `MCP_SERVICE_TOKEN` | from above; lets the MCP function call the API (Phase 1: acts as the one signed-in owner) |
+| `MCP_SERVICE_TOKEN` | from above; identifies the MCP function to the API — it also needs `X-Acting-User` to say which signed-in user it's acting for |
 
 Redeploy.
 
@@ -132,3 +132,39 @@ Testing, to its **Test users**), redeploy.
 
 - Local dev: set `DEV_LOGIN_EMAIL=you@example.com` in `backend/.env` and
   "Sign in with Google" signs you in as that email without contacting Google.
+
+## Per-user data (Phase 2) — one-time upgrade
+
+The Phase 2 code expects every topic/entry/post to have a `user_id`. Run the
+migration **before** deploying it, then deploy right away — see
+`backend/migrations/002_user_scoping.sql` for exact run instructions.
+
+1. Supabase → Database → Backups: confirm a recent backup exists. This is the
+   rollback path if anything goes wrong — the old code can't read the new
+   keys.
+2. Make sure you have signed in to the live app at least once with your Google
+   account (the migration looks your `users` row up by email).
+3. Optional: confirm production's constraint names match what the migration
+   drops —
+   ```sql
+   select conrelid::regclass, conname from pg_constraint
+   where conrelid in ('topics'::regclass, 'entries'::regclass, 'posts'::regclass)
+   order by 1, 2;
+   ```
+   Expect `topics_pkey`, `entries_pkey`, `entries_topic_slug_fkey`,
+   `posts_pkey`, `posts_topic_slug_entry_id_fkey`. If they differ, stop —
+   nothing has changed yet.
+4. Supabase → SQL Editor → run `backend/migrations/002_user_scoping.sql`. Its
+   header has the exact steps (what to replace, how to read success vs.
+   failure).
+5. Deploy the Phase 2 code immediately. The currently deployed code fails
+   against the new keys and the new code fails against the old keys, so
+   expect errors in the gap between migration and deploy. Deploy the whole
+   branch together — from the first Phase 2 commit, Flask refuses the MCP
+   service token unless the MCP server sends `X-Acting-User`, which only the
+   later commits add, so a partial deploy breaks Claude's connection.
+6. Check: your topics show up on the web; in Claude, `list_topics` works (if
+   it says to reconnect, disconnect and reconnect Small Wins).
+7. Only now add friends to `ALLOWED_EMAILS`. Each new user starts with a
+   default "Runs" topic and sees only their own data. Note: uploaded images
+   are still readable by anyone who has the URL until Phase 3.
