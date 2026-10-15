@@ -83,8 +83,9 @@ export interface Prepared {
   blob: Blob;
   ext: string;
   /** A ≤THUMB_DIM copy for entry tiles; null for GIFs (it would lose the
-   * animation) or if it couldn't be made — the server then serves the full
-   * image in its place. */
+   * animation), when the image is already ≤THUMB_DIM (nothing to save), or
+   * if it couldn't be made — the server then serves the full image in its
+   * place. */
   thumb: Blob | null;
 }
 
@@ -111,7 +112,8 @@ export async function prepareImage(file: File): Promise<Prepared> {
 
   try {
     const type = encodeType();
-    const thumb = await render(bitmap, fitWithin(bitmap.width, bitmap.height, THUMB_DIM), type);
+    const tfit = fitWithin(bitmap.width, bitmap.height, THUMB_DIM);
+    const thumb = tfit.scaled ? await render(bitmap, tfit, type) : null;
 
     const fit = fitWithin(bitmap.width, bitmap.height);
     if (!shouldReencode(file, fit)) return { ...asIs(), thumb };

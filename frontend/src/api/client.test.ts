@@ -69,10 +69,14 @@ const okJson = (body: unknown) =>
 describe("uploadImage", () => {
   const calls: { url: string; init?: RequestInit }[] = [];
   let thumbStatus = 200;
+  let thumbReject = false;
+  let fullStatus = 200;
 
   beforeEach(() => {
     calls.length = 0;
     thumbStatus = 200;
+    thumbReject = false;
+    fullStatus = 200;
     vi.stubGlobal("fetch", vi.fn(async (url: string, init?: RequestInit) => {
       calls.push({ url, init });
       if (url === "/api/uploads/sign") {
@@ -83,7 +87,11 @@ describe("uploadImage", () => {
           ...(asked.thumb ? { thumb_upload_url: "https://s/thumb" } : {}),
         });
       }
-      if (url === "https://s/thumb") return new Response("", { status: thumbStatus });
+      if (url === "https://s/thumb") {
+        if (thumbReject) throw new TypeError("network");
+        return new Response("", { status: thumbStatus });
+      }
+      if (url === "https://s/full") return new Response("", { status: fullStatus });
       return new Response("", { status: 200 });
     }));
   });
@@ -132,5 +140,26 @@ describe("uploadImage", () => {
     await uploadImage(file);
     expect(JSON.parse(String(calls[0].init?.body))).toEqual({ ext: "gif", thumb: false });
     expect(calls.map((c) => c.url)).toEqual(["/api/uploads/sign", "https://s/full"]);
+  });
+
+  it("succeeds even when the thumbnail upload rejects outright (network error)", async () => {
+    thumbReject = true;
+    vi.mocked(prepareImage).mockResolvedValue({
+      blob: new Blob(["full"], { type: "image/jpeg" }),
+      ext: "jpg",
+      thumb: new Blob(["t"], { type: "image/webp" }),
+    });
+    await expect(uploadImage(file)).resolves.toEqual({ url: "/api/images/users/1/a.jpg" });
+    expect(calls.map((c) => c.url)).toContain("https://s/thumb");
+  });
+
+  it("rejects when the full image upload fails", async () => {
+    fullStatus = 500;
+    vi.mocked(prepareImage).mockResolvedValue({
+      blob: new Blob(["full"], { type: "image/jpeg" }),
+      ext: "jpg",
+      thumb: null,
+    });
+    await expect(uploadImage(file)).rejects.toThrow(/Request failed \(500/);
   });
 });
