@@ -290,6 +290,50 @@ def test_delete_entry_tolerates_a_missing_thumbnail(client, monkeypatch):
     assert warnings == []  # a GIF has no thumbnail; that's not a failure
 
 
+def test_delete_entry_still_deletes_the_thumbnail_when_the_main_image_is_already_gone(
+    client, monkeypatch
+):
+    _set_storage_env(monkeypatch)
+    deleted = []
+
+    def delete(name):
+        if name.endswith(".thumb"):
+            deleted.append(name)
+            return
+        raise app_module.storage.NotFound(name)
+    monkeypatch.setattr(app_module.storage, "delete_object", delete)
+    warnings = []
+    monkeypatch.setattr(app_module.app.logger, "warning", lambda *a: warnings.append(a))
+
+    entry_id = make_entry(client)
+    client.patch(f"/api/topics/runs/entries/{entry_id}", json={"image": image_url(client, "a.jpg")})
+
+    assert client.delete(f"/api/topics/runs/entries/{entry_id}").status_code == 200
+    assert deleted == [f"users/{my_id(client)}/a.thumb"]
+    assert warnings == []  # the main image being gone already isn't a failure
+
+
+def test_delete_entry_logs_once_when_only_the_thumbnail_delete_fails(client, monkeypatch):
+    _set_storage_env(monkeypatch)
+    deleted = []
+
+    def delete(name):
+        if name.endswith(".thumb"):
+            raise RuntimeError("storage down")
+        deleted.append(name)
+    monkeypatch.setattr(app_module.storage, "delete_object", delete)
+    warnings = []
+    monkeypatch.setattr(app_module.app.logger, "warning", lambda *a: warnings.append(a))
+
+    entry_id = make_entry(client)
+    client.patch(f"/api/topics/runs/entries/{entry_id}", json={"image": image_url(client, "a.jpg")})
+
+    res = client.delete(f"/api/topics/runs/entries/{entry_id}")
+    assert res.status_code == 200
+    assert deleted == [f"users/{my_id(client)}/a.jpg"]
+    assert len(warnings) == 1
+
+
 def test_delete_entry_keeps_image_still_referenced_by_another_entry(client, monkeypatch):
     _set_storage_env(monkeypatch)
     deleted = []
@@ -312,9 +356,9 @@ def test_delete_entry_keeps_image_still_referenced_by_another_entry(client, monk
 def test_delete_entry_keeps_figure_copied_into_another_post(client, monkeypatch):
     # TipTap lets you copy a figure node between posts, duplicating its src.
     # A hero-image share alone (as in the test above) only exercises
-    # db.all_entry_images(); this pins the in-body half of
-    # referenced_image_urls(), across two different topics to also cover
-    # the cross-topic union.
+    # db.all_entry_images(user_id); this pins the in-body half of
+    # referenced_image_urls(user_id), across two different topics to also
+    # cover the cross-topic union.
     _set_storage_env(monkeypatch)
     deleted = []
     monkeypatch.setattr(app_module.storage, "delete_object", lambda name: deleted.append(name))

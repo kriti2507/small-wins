@@ -372,7 +372,10 @@ def delete_entry(slug, entry_id):
             name = storage.object_name_for(url, g.user_id)
             if not name:  # not one of this user's objects (or an unsafe key) -- skip
                 continue
-            storage.delete_object(name)
+            try:
+                storage.delete_object(name)
+            except storage.NotFound:
+                pass  # already gone -- still try the thumbnail below
             try:
                 storage.delete_object(storage.thumb_name_for(name))
             except storage.NotFound:
