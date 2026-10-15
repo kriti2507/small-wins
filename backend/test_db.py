@@ -166,11 +166,11 @@ def test_deleting_a_user_cascades_to_all_their_data(uid, other):
 
     db.get_conn().execute("delete from users where id=%s", (uid,))
 
-    assert db.all_post_docs() == []
+    assert db.all_post_docs(uid) == []
     assert db.find_entry(other, "runs", 1) is not None
 
 
-def test_all_entry_images_excludes_nulls_across_topics_and_users(uid, other):
+def test_all_entry_images_excludes_nulls_and_other_users(uid, other):
     import db
     db.load_topics(uid)
     db.load_topics(other)
@@ -180,10 +180,10 @@ def test_all_entry_images_excludes_nulls_across_topics_and_users(uid, other):
     db.save_entry(uid, "books", {"id": 1, "date": "", "image": "https://x/b.jpg"})
     db.save_entry(other, "runs", {"id": 1, "date": "", "image": "https://x/c.jpg"})
 
-    assert db.all_entry_images() == {"https://x/a.jpg", "https://x/b.jpg", "https://x/c.jpg"}
+    assert db.all_entry_images(uid) == {"https://x/a.jpg", "https://x/b.jpg"}
 
 
-def test_all_post_docs_returns_every_doc_across_users(uid, other):
+def test_all_post_docs_returns_only_this_users_docs(uid, other):
     import db
     db.load_topics(uid)
     db.load_topics(other)
@@ -194,10 +194,7 @@ def test_all_post_docs_returns_every_doc_across_users(uid, other):
     db.save_post(uid, "runs", 1, doc1)
     db.save_post(other, "runs", 1, doc2)
 
-    docs = db.all_post_docs()
-    assert len(docs) == 2
-    assert doc1 in docs
-    assert doc2 in docs
+    assert db.all_post_docs(uid) == [doc1]
 
 
 def test_upsert_user_creates_then_updates_by_google_sub(app_ctx):

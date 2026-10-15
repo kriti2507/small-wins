@@ -30,6 +30,14 @@ MIME = {"png": "image/png", "jpg": "image/jpeg", "jpeg": "image/jpeg",
         "gif": "image/gif", "webp": "image/webp"}
 
 
+def public_url(name):
+    """Where the public bucket served `name` when this script ran. Phase 3's
+    migrate_storage_003.py moves these to private per-user paths."""
+    base = os.environ["SUPABASE_URL"].rstrip("/")
+    bucket = os.environ.get("SUPABASE_BUCKET", "uploads")
+    return f"{base}/storage/v1/object/public/{bucket}/{name}"
+
+
 def to_doc(body):
     """Legacy Block[] bodies -> TipTap doc; docs pass through unchanged."""
     if isinstance(body, dict):
@@ -78,8 +86,8 @@ def upload_all_images():
         ext = fname.rsplit(".", 1)[-1].lower()
         with open(os.path.join(UPLOADS_DIR, fname), "rb") as f:
             data = f.read()
-        public = storage.upload_bytes(fname, data, MIME.get(ext, "application/octet-stream"))
-        url_map[f"/api/uploads/{fname}"] = public
+        storage.upload_bytes(fname, data, MIME.get(ext, "application/octet-stream"))
+        url_map[f"/api/uploads/{fname}"] = public_url(fname)
     return url_map
 
 

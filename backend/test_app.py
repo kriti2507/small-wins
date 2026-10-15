@@ -22,13 +22,18 @@ def make_entry(client):
     return res.get_json()["id"]
 
 
-BUCKET_PREFIX = "https://proj.supabase.co/storage/v1/object/public/uploads/"
-
-
 def _set_storage_env(monkeypatch):
     monkeypatch.setenv("SUPABASE_URL", "https://proj.supabase.co")
     monkeypatch.setenv("SUPABASE_SERVICE_KEY", "svc")
     monkeypatch.setenv("SUPABASE_BUCKET", "uploads")
+
+
+def my_id(client):
+    return client.get("/api/auth/me").get_json()["user"]["id"]
+
+
+def image_url(client, name):
+    return f"/api/images/users/{my_id(client)}/{name}"
 
 
 # --- Entry body / fields ----------------------------------------------------
@@ -244,23 +249,45 @@ def test_delete_entry_unknown_entry_404(client):
     assert res.get_json()["error"] == "Unknown entry."
 
 
-def test_delete_entry_deletes_hero_and_body_images(client, monkeypatch):
+def test_delete_entry_deletes_hero_and_body_images_and_their_thumbnails(client, monkeypatch):
     _set_storage_env(monkeypatch)
     deleted = []
     monkeypatch.setattr(app_module.storage, "delete_object", lambda name: deleted.append(name))
+    uid = my_id(client)
 
     entry_id = make_entry(client)
-    hero_url = BUCKET_PREFIX + "hero.jpg"
-    client.patch(f"/api/topics/runs/entries/{entry_id}", json={"image": hero_url})
-    body_url = BUCKET_PREFIX + "body.jpg"
+    client.patch(f"/api/topics/runs/entries/{entry_id}", json={"image": image_url(client, "hero.jpg")})
     doc = {"type": "doc", "content": [
-        {"type": "figure", "attrs": {"src": body_url}, "content": []},
+        {"type": "figure", "attrs": {"src": image_url(client, "body.jpg")}, "content": []},
     ]}
     client.patch(f"/api/topics/runs/entries/{entry_id}", json={"body": doc})
 
     res = client.delete(f"/api/topics/runs/entries/{entry_id}")
     assert res.status_code == 200
-    assert set(deleted) == {"hero.jpg", "body.jpg"}
+    assert set(deleted) == {
+        f"users/{uid}/hero.jpg", f"users/{uid}/hero.thumb",
+        f"users/{uid}/body.jpg", f"users/{uid}/body.thumb",
+    }
+
+
+def test_delete_entry_tolerates_a_missing_thumbnail(client, monkeypatch):
+    _set_storage_env(monkeypatch)
+    deleted = []
+
+    def delete(name):
+        if name.endswith(".thumb"):
+            raise app_module.storage.NotFound(name)
+        deleted.append(name)
+    monkeypatch.setattr(app_module.storage, "delete_object", delete)
+    warnings = []
+    monkeypatch.setattr(app_module.app.logger, "warning", lambda *a: warnings.append(a))
+
+    entry_id = make_entry(client)
+    client.patch(f"/api/topics/runs/entries/{entry_id}", json={"image": image_url(client, "a.gif")})
+
+    assert client.delete(f"/api/topics/runs/entries/{entry_id}").status_code == 200
+    assert deleted == [f"users/{my_id(client)}/a.gif"]
+    assert warnings == []  # a GIF has no thumbnail; that's not a failure
 
 
 def test_delete_entry_keeps_image_still_referenced_by_another_entry(client, monkeypatch):
@@ -268,7 +295,7 @@ def test_delete_entry_keeps_image_still_referenced_by_another_entry(client, monk
     deleted = []
     monkeypatch.setattr(app_module.storage, "delete_object", lambda name: deleted.append(name))
 
-    shared_url = BUCKET_PREFIX + "shared.jpg"
+    shared_url = image_url(client, "shared.jpg")
     entry1 = make_entry(client)
     entry2 = make_entry(client)
     client.patch(f"/api/topics/runs/entries/{entry1}", json={"image": shared_url})
@@ -276,7 +303,7 @@ def test_delete_entry_keeps_image_still_referenced_by_another_entry(client, monk
 
     res = client.delete(f"/api/topics/runs/entries/{entry1}")
     assert res.status_code == 200
-    assert "shared.jpg" not in deleted
+    assert deleted == []
 
     # the surviving entry can still be fetched with its image intact
     assert client.get(f"/api/topics/runs/entries/{entry2}").get_json()["image"] == shared_url
@@ -295,7 +322,7 @@ def test_delete_entry_keeps_figure_copied_into_another_post(client, monkeypatch)
     res = client.post("/api/topics", json={"name": "Books"})
     assert res.status_code == 201
 
-    shared_url = BUCKET_PREFIX + "copied.jpg"
+    shared_url = image_url(client, "copied.jpg")
     doc = {"type": "doc", "content": [
         {"type": "figure", "attrs": {"src": shared_url}, "content": []},
     ]}
@@ -308,7 +335,7 @@ def test_delete_entry_keeps_figure_copied_into_another_post(client, monkeypatch)
 
     res = client.delete(f"/api/topics/runs/entries/{entry1}")
     assert res.status_code == 200
-    assert "copied.jpg" not in deleted
+    assert deleted == []
 
     # the surviving post in the other topic still resolves the shared figure
     survivor = client.get(f"/api/topics/books/entries/{entry2}").get_json()
@@ -332,6 +359,19 @@ def test_delete_entry_skips_externally_hosted_image(client, monkeypatch):
     assert deleted == []
 
 
+def test_delete_entry_leaves_old_public_urls_alone(client, monkeypatch):
+    _set_storage_env(monkeypatch)
+    deleted = []
+    monkeypatch.setattr(app_module.storage, "delete_object", lambda name: deleted.append(name))
+
+    entry_id = make_entry(client)
+    old = "https://proj.supabase.co/storage/v1/object/public/uploads/old.jpg"
+    client.patch(f"/api/topics/runs/entries/{entry_id}", json={"image": old})
+
+    assert client.delete(f"/api/topics/runs/entries/{entry_id}").status_code == 200
+    assert deleted == []
+
+
 def test_delete_entry_storage_failure_still_returns_200(client, monkeypatch):
     _set_storage_env(monkeypatch)
 
@@ -341,7 +381,7 @@ def test_delete_entry_storage_failure_still_returns_200(client, monkeypatch):
     monkeypatch.setattr(app_module.storage, "delete_object", boom)
 
     entry_id = make_entry(client)
-    hero_url = BUCKET_PREFIX + "hero.jpg"
+    hero_url = image_url(client, "hero.jpg")
     client.patch(f"/api/topics/runs/entries/{entry_id}", json={"image": hero_url})
 
     res = client.delete(f"/api/topics/runs/entries/{entry_id}")

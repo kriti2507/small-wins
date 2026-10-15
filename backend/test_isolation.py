@@ -4,7 +4,6 @@ from conftest import make_user
 
 DOC = {"type": "doc", "content": [
     {"type": "paragraph", "content": [{"type": "text", "text": "mine"}]}]}
-BUCKET_PREFIX = "https://proj.supabase.co/storage/v1/object/public/uploads/"
 
 
 def slugs(c, headers=None):
@@ -99,24 +98,35 @@ def test_same_slug_and_entry_id_stay_separate(client, second_client):
     assert second_client.get(url).status_code == 404
 
 
-def test_deleting_an_entry_keeps_an_image_another_user_still_uses(client, second_client, monkeypatch):
+def test_deleting_an_entry_never_touches_another_users_objects(client, second_client, monkeypatch):
     monkeypatch.setenv("SUPABASE_URL", "https://proj.supabase.co")
     monkeypatch.setenv("SUPABASE_SERVICE_KEY", "svc")
     monkeypatch.setenv("SUPABASE_BUCKET", "uploads")
     deleted = []
     monkeypatch.setattr(app_module.storage, "delete_object", lambda name: deleted.append(name))
+    theirs_id = second_client.get("/api/auth/me").get_json()["user"]["id"]
 
-    shared = BUCKET_PREFIX + "shared.jpg"
+    # Pasting someone else's image path into your own entry...
+    theirs = f"/api/images/users/{theirs_id}/theirs.jpg"
     mine = add_run(client)
-    assert client.patch(f"/api/topics/runs/entries/{mine}", json={"image": shared}).status_code == 200
-    theirs = add_run(second_client)
-    assert second_client.patch(f"/api/topics/runs/entries/{theirs}", json={"image": shared}).status_code == 200
-
+    assert client.patch(f"/api/topics/runs/entries/{mine}", json={"image": theirs}).status_code == 200
+    # ...neither lets you read it...
+    assert client.get(theirs).status_code == 404
+    # ...nor delete it.
     assert client.delete(f"/api/topics/runs/entries/{mine}").status_code == 200
-    assert "shared.jpg" not in deleted
+    assert deleted == []
 
-    assert second_client.delete(f"/api/topics/runs/entries/{theirs}").status_code == 200
-    assert "shared.jpg" in deleted
+
+def test_one_user_cannot_read_another_users_image(client, second_client, monkeypatch):
+    monkeypatch.setenv("SUPABASE_URL", "https://proj.supabase.co")
+    monkeypatch.setenv("SUPABASE_SERVICE_KEY", "svc")
+    monkeypatch.setattr(app_module.storage, "signed_read_url",
+                        lambda name, expires_in: f"https://signed/{name}")
+    mine_id = client.get("/api/auth/me").get_json()["user"]["id"]
+    path = f"/api/images/users/{mine_id}/mine.jpg"
+    assert client.get(path).status_code == 302
+    assert second_client.get(path).status_code == 404
+    assert second_client.get(path + "?size=thumb").status_code == 404
 
 
 def test_service_token_sees_only_the_acting_users_data(db_anon_client, monkeypatch):

@@ -177,20 +177,19 @@ def delete_entry(user_id, slug, entry_id):
     )
 
 
-# These two deliberately span every user: an uploaded image is only deleted
-# when *nobody* references it any more (see app.delete_entry). Phase 3 gives
-# each user their own storage prefix and narrows this.
-def all_entry_images():
+# Each user's objects live under their own storage prefix, so only their own
+# rows can still reference them (see app.delete_entry).
+def all_entry_images(user_id):
     conn = get_conn()
     rows = conn.execute(
-        "select image from entries where image is not null"
+        "select image from entries where user_id=%s and image is not null", (user_id,)
     ).fetchall()
     return {r["image"] for r in rows}
 
 
-def all_post_docs():
+def all_post_docs(user_id):
     conn = get_conn()
-    rows = conn.execute("select doc from posts").fetchall()
+    rows = conn.execute("select doc from posts where user_id=%s", (user_id,)).fetchall()
     return [r["doc"] for r in rows]
 
 

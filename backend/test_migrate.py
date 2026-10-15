@@ -19,6 +19,12 @@ def test_to_doc_converts_legacy_blocks():
     ]}
 
 
+def test_public_url_points_at_the_old_public_bucket(monkeypatch):
+    monkeypatch.setenv("SUPABASE_URL", "https://proj.supabase.co/")
+    monkeypatch.setenv("SUPABASE_BUCKET", "uploads")
+    assert m.public_url("a.jpg") == "https://proj.supabase.co/storage/v1/object/public/uploads/a.jpg"
+
+
 def test_rewrite_srcs_maps_known_urls_and_leaves_original():
     doc = {"type": "doc", "content": [
         {"type": "figure", "attrs": {"src": "/api/uploads/x.jpg", "width": "wide"}}]}

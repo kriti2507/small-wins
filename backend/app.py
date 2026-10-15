@@ -114,13 +114,13 @@ def image_urls_in(doc):
     return urls
 
 
-def referenced_image_urls():
-    """Every image URL still referenced anywhere, by any user: hero
-    images plus in-body figures. See the call site in delete_entry for the
-    ordering requirement.
+def referenced_image_urls(user_id):
+    """Every image URL user_id still references: hero images plus in-body
+    figures. Nobody else can reference this user's objects. See the call site
+    in delete_entry for the ordering requirement.
     """
-    urls = db.all_entry_images()
-    for doc in db.all_post_docs():
+    urls = db.all_entry_images(user_id)
+    for doc in db.all_post_docs(user_id):
         urls |= image_urls_in(doc)
     return urls
 
@@ -363,16 +363,20 @@ def delete_entry(slug, entry_id):
     # be answered correctly -- otherwise the entry being deleted would count
     # as its own reference and nothing would ever be cleaned up. Skip the
     # scan entirely when there's nothing that could possibly be freed.
-    orphaned = candidates - referenced_image_urls() if candidates else set()
+    orphaned = candidates - referenced_image_urls(g.user_id) if candidates else set()
     for url in orphaned:
         # The row is already gone; a 500 here would be a lie regardless of
         # cause, so the whole per-URL body -- including resolving the name,
         # which can raise on a storage misconfiguration -- is best-effort.
         try:
-            name = storage.object_name_for(url)
-            if not name:  # not one of our own objects (or an unsafe key) -- skip
+            name = storage.object_name_for(url, g.user_id)
+            if not name:  # not one of this user's objects (or an unsafe key) -- skip
                 continue
             storage.delete_object(name)
+            try:
+                storage.delete_object(storage.thumb_name_for(name))
+            except storage.NotFound:
+                pass  # GIFs and older uploads have no thumbnail
         except Exception as exc:
             app.logger.warning("failed to delete storage object for %s: %s", url, exc)
 

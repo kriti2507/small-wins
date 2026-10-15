@@ -27,7 +27,7 @@ class FakeResp:
         return False
 
 
-def test_upload_bytes_posts_and_returns_public_url(monkeypatch):
+def test_upload_bytes_posts_with_auth_and_upsert(monkeypatch):
     calls = {}
 
     def fake_urlopen(req):
@@ -35,17 +35,18 @@ def test_upload_bytes_posts_and_returns_public_url(monkeypatch):
         calls["auth"] = req.get_header("Authorization")
         calls["ctype"] = req.get_header("Content-type")
         calls["data"] = req.data
+        calls["upsert"] = req.get_header("X-upsert")
         return FakeResp()
 
     monkeypatch.setattr(storage.urllib.request, "urlopen", fake_urlopen)
 
-    url = storage.upload_bytes("abc.png", b"binary-data", "image/png")
+    storage.upload_bytes("abc.png", b"binary-data", "image/png")
 
     assert calls["url"] == "https://proj.supabase.co/storage/v1/object/uploads/abc.png"
     assert calls["auth"] == "Bearer svc"
     assert calls["ctype"] == "image/png"
     assert calls["data"] == b"binary-data"
-    assert url == "https://proj.supabase.co/storage/v1/object/public/uploads/abc.png"
+    assert calls["upsert"] == "true"
 
 
 def test_delete_object_issues_delete_with_auth_headers(monkeypatch):
@@ -106,73 +107,24 @@ def test_signed_upload_url_rejects_a_response_without_a_url(monkeypatch):
         storage.signed_upload_url("abc.png")
 
 
-def test_public_url_for_matches_what_upload_bytes_returns(monkeypatch):
-    monkeypatch.setattr(storage.urllib.request, "urlopen", lambda req: FakeResp())
-    assert storage.public_url_for("abc.png") == storage.upload_bytes(
-        "abc.png", b"x", "image/png"
-    )
+def test_object_name_for_accepts_only_the_users_own_image_paths():
+    assert storage.object_name_for("/api/images/users/7/abc.jpg", 7) == "users/7/abc.jpg"
 
 
-def test_public_url_for_round_trips_through_object_name_for():
-    assert storage.object_name_for(storage.public_url_for("abc.png")) == "abc.png"
-
-
-def test_object_name_for_returns_key_for_matching_bucket_url():
-    url = "https://proj.supabase.co/storage/v1/object/public/uploads/abc.png"
-    assert storage.object_name_for(url) == "abc.png"
-
-
-def test_object_name_for_round_trips_with_upload_bytes(monkeypatch):
-    monkeypatch.setattr(storage.urllib.request, "urlopen", lambda req: FakeResp())
-    url = storage.upload_bytes("abc.png", b"x", "image/png")
-    assert storage.object_name_for(url) == "abc.png"
-
-
-@pytest.mark.parametrize(
-    "url",
-    [
-        pytest.param(None, id="none"),
-        pytest.param("", id="empty-string"),
-        pytest.param(
-            "https://evil.example.com/storage/v1/object/public/uploads/abc.png",
-            id="different-host",
-        ),
-        pytest.param(
-            "https://proj.supabase.co/some/other/path/abc.png",
-            id="same-host-wrong-path",
-        ),
-        pytest.param(
-            "https://proj.supabase.co/storage/v1/object/public/uploads-archive/a.png",
-            id="bucket-prefix-confusion",
-        ),
-        pytest.param(
-            "https://proj.supabase.co/storage/v1/object/public/other-bucket/a.png",
-            id="wrong-bucket",
-        ),
-        pytest.param(
-            "https://proj.supabase.co/storage/v1/object/uploads/a.png",
-            id="authenticated-not-public-path",
-        ),
-        pytest.param(
-            "https://proj.supabase.co/storage/v1/object/public/uploads/../../x.png",
-            id="dot-dot-traversal",
-        ),
-        pytest.param(
-            "https://proj.supabase.co/storage/v1/object/public/uploads/%2e%2e%2fx.png",
-            id="percent-encoded-traversal",
-        ),
-        pytest.param(
-            "https://proj.supabase.co/storage/v1/object/public/uploads/",
-            id="empty-key",
-        ),
-        pytest.param(
-            "https://proj.supabase.co/storage/v1/object/public/uploads/a.png?download=1",
-            id="query-string-appended",
-        ),
-    ],
-)
-def test_object_name_for_returns_none(url):
-    assert storage.object_name_for(url) is None
+@pytest.mark.parametrize("url", [
+    None,
+    "",
+    "/api/images/users/8/abc.jpg",
+    "/api/images/abc.jpg",
+    "/api/images/users/7/../8/abc.jpg",
+    "/api/images/users/7/abc.jpg?x=1",
+    # Old public-bucket URLs are never deleted by the app; the migration's
+    # --delete-old sweeps them.
+    "https://proj.supabase.co/storage/v1/object/public/uploads/abc.jpg",
+    "https://example.com/abc.jpg",
+])
+def test_object_name_for_refuses_everything_else(url):
+    assert storage.object_name_for(url, 7) is None
 
 
 def http_error(status, body=b""):
