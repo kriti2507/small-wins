@@ -28,7 +28,7 @@ export interface TextBlock {
 
 export interface ImageBlock {
   type: "image";
-  url: string; // served path, e.g. "/api/uploads/ab12.jpg"
+  url: string; // served path, e.g. "/api/images/users/<id>/<hex>.jpg"
 }
 
 export type Block = TextBlock | ImageBlock;
@@ -56,7 +56,7 @@ export interface PostDoc {
 export interface Entry {
   id: number;
   date: string; // "YYYY-MM-DD"
-  image?: string | null; // served path, e.g. "/api/uploads/ab12.jpg"
+  image?: string | null; // served path, e.g. "/api/images/users/<id>/<hex>.jpg"
   body?: PostDoc | Block[]; // TipTap doc; Block[] on legacy entries not yet re-saved
   [fieldKey: string]: string | number | null | undefined | Block[] | PostDoc;
 }

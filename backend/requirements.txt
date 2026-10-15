@@ -1,2 +1,4 @@
 -r ../requirements.txt
 pytest
+# migrate_storage_003.py only; not needed on Vercel.
+Pillow>=10

@@ -22,13 +22,18 @@ def make_entry(client):
     return res.get_json()["id"]
 
 
-BUCKET_PREFIX = "https://proj.supabase.co/storage/v1/object/public/uploads/"
-
-
 def _set_storage_env(monkeypatch):
     monkeypatch.setenv("SUPABASE_URL", "https://proj.supabase.co")
     monkeypatch.setenv("SUPABASE_SERVICE_KEY", "svc")
     monkeypatch.setenv("SUPABASE_BUCKET", "uploads")
+
+
+def my_id(client):
+    return client.get("/api/auth/me").get_json()["user"]["id"]
+
+
+def image_url(client, name):
+    return f"/api/images/users/{my_id(client)}/{name}"
 
 
 # --- Entry body / fields ----------------------------------------------------
@@ -244,23 +249,89 @@ def test_delete_entry_unknown_entry_404(client):
     assert res.get_json()["error"] == "Unknown entry."
 
 
-def test_delete_entry_deletes_hero_and_body_images(client, monkeypatch):
+def test_delete_entry_deletes_hero_and_body_images_and_their_thumbnails(client, monkeypatch):
     _set_storage_env(monkeypatch)
     deleted = []
     monkeypatch.setattr(app_module.storage, "delete_object", lambda name: deleted.append(name))
+    uid = my_id(client)
 
     entry_id = make_entry(client)
-    hero_url = BUCKET_PREFIX + "hero.jpg"
-    client.patch(f"/api/topics/runs/entries/{entry_id}", json={"image": hero_url})
-    body_url = BUCKET_PREFIX + "body.jpg"
+    client.patch(f"/api/topics/runs/entries/{entry_id}", json={"image": image_url(client, "hero.jpg")})
     doc = {"type": "doc", "content": [
-        {"type": "figure", "attrs": {"src": body_url}, "content": []},
+        {"type": "figure", "attrs": {"src": image_url(client, "body.jpg")}, "content": []},
     ]}
     client.patch(f"/api/topics/runs/entries/{entry_id}", json={"body": doc})
 
     res = client.delete(f"/api/topics/runs/entries/{entry_id}")
     assert res.status_code == 200
-    assert set(deleted) == {"hero.jpg", "body.jpg"}
+    assert set(deleted) == {
+        f"users/{uid}/hero.jpg", f"users/{uid}/hero.thumb",
+        f"users/{uid}/body.jpg", f"users/{uid}/body.thumb",
+    }
+
+
+def test_delete_entry_tolerates_a_missing_thumbnail(client, monkeypatch):
+    _set_storage_env(monkeypatch)
+    deleted = []
+
+    def delete(name):
+        if name.endswith(".thumb"):
+            raise app_module.storage.NotFound(name)
+        deleted.append(name)
+    monkeypatch.setattr(app_module.storage, "delete_object", delete)
+    warnings = []
+    monkeypatch.setattr(app_module.app.logger, "warning", lambda *a: warnings.append(a))
+
+    entry_id = make_entry(client)
+    client.patch(f"/api/topics/runs/entries/{entry_id}", json={"image": image_url(client, "a.gif")})
+
+    assert client.delete(f"/api/topics/runs/entries/{entry_id}").status_code == 200
+    assert deleted == [f"users/{my_id(client)}/a.gif"]
+    assert warnings == []  # a GIF has no thumbnail; that's not a failure
+
+
+def test_delete_entry_still_deletes_the_thumbnail_when_the_main_image_is_already_gone(
+    client, monkeypatch
+):
+    _set_storage_env(monkeypatch)
+    deleted = []
+
+    def delete(name):
+        if name.endswith(".thumb"):
+            deleted.append(name)
+            return
+        raise app_module.storage.NotFound(name)
+    monkeypatch.setattr(app_module.storage, "delete_object", delete)
+    warnings = []
+    monkeypatch.setattr(app_module.app.logger, "warning", lambda *a: warnings.append(a))
+
+    entry_id = make_entry(client)
+    client.patch(f"/api/topics/runs/entries/{entry_id}", json={"image": image_url(client, "a.jpg")})
+
+    assert client.delete(f"/api/topics/runs/entries/{entry_id}").status_code == 200
+    assert deleted == [f"users/{my_id(client)}/a.thumb"]
+    assert warnings == []  # the main image being gone already isn't a failure
+
+
+def test_delete_entry_logs_once_when_only_the_thumbnail_delete_fails(client, monkeypatch):
+    _set_storage_env(monkeypatch)
+    deleted = []
+
+    def delete(name):
+        if name.endswith(".thumb"):
+            raise RuntimeError("storage down")
+        deleted.append(name)
+    monkeypatch.setattr(app_module.storage, "delete_object", delete)
+    warnings = []
+    monkeypatch.setattr(app_module.app.logger, "warning", lambda *a: warnings.append(a))
+
+    entry_id = make_entry(client)
+    client.patch(f"/api/topics/runs/entries/{entry_id}", json={"image": image_url(client, "a.jpg")})
+
+    res = client.delete(f"/api/topics/runs/entries/{entry_id}")
+    assert res.status_code == 200
+    assert deleted == [f"users/{my_id(client)}/a.jpg"]
+    assert len(warnings) == 1
 
 
 def test_delete_entry_keeps_image_still_referenced_by_another_entry(client, monkeypatch):
@@ -268,7 +339,7 @@ def test_delete_entry_keeps_image_still_referenced_by_another_entry(client, monk
     deleted = []
     monkeypatch.setattr(app_module.storage, "delete_object", lambda name: deleted.append(name))
 
-    shared_url = BUCKET_PREFIX + "shared.jpg"
+    shared_url = image_url(client, "shared.jpg")
     entry1 = make_entry(client)
     entry2 = make_entry(client)
     client.patch(f"/api/topics/runs/entries/{entry1}", json={"image": shared_url})
@@ -276,7 +347,7 @@ def test_delete_entry_keeps_image_still_referenced_by_another_entry(client, monk
 
     res = client.delete(f"/api/topics/runs/entries/{entry1}")
     assert res.status_code == 200
-    assert "shared.jpg" not in deleted
+    assert deleted == []
 
     # the surviving entry can still be fetched with its image intact
     assert client.get(f"/api/topics/runs/entries/{entry2}").get_json()["image"] == shared_url
@@ -285,9 +356,9 @@ def test_delete_entry_keeps_image_still_referenced_by_another_entry(client, monk
 def test_delete_entry_keeps_figure_copied_into_another_post(client, monkeypatch):
     # TipTap lets you copy a figure node between posts, duplicating its src.
     # A hero-image share alone (as in the test above) only exercises
-    # db.all_entry_images(); this pins the in-body half of
-    # referenced_image_urls(), across two different topics to also cover
-    # the cross-topic union.
+    # db.all_entry_images(user_id); this pins the in-body half of
+    # referenced_image_urls(user_id), across two different topics to also
+    # cover the cross-topic union.
     _set_storage_env(monkeypatch)
     deleted = []
     monkeypatch.setattr(app_module.storage, "delete_object", lambda name: deleted.append(name))
@@ -295,7 +366,7 @@ def test_delete_entry_keeps_figure_copied_into_another_post(client, monkeypatch)
     res = client.post("/api/topics", json={"name": "Books"})
     assert res.status_code == 201
 
-    shared_url = BUCKET_PREFIX + "copied.jpg"
+    shared_url = image_url(client, "copied.jpg")
     doc = {"type": "doc", "content": [
         {"type": "figure", "attrs": {"src": shared_url}, "content": []},
     ]}
@@ -308,7 +379,7 @@ def test_delete_entry_keeps_figure_copied_into_another_post(client, monkeypatch)
 
     res = client.delete(f"/api/topics/runs/entries/{entry1}")
     assert res.status_code == 200
-    assert "copied.jpg" not in deleted
+    assert deleted == []
 
     # the surviving post in the other topic still resolves the shared figure
     survivor = client.get(f"/api/topics/books/entries/{entry2}").get_json()
@@ -332,6 +403,19 @@ def test_delete_entry_skips_externally_hosted_image(client, monkeypatch):
     assert deleted == []
 
 
+def test_delete_entry_leaves_old_public_urls_alone(client, monkeypatch):
+    _set_storage_env(monkeypatch)
+    deleted = []
+    monkeypatch.setattr(app_module.storage, "delete_object", lambda name: deleted.append(name))
+
+    entry_id = make_entry(client)
+    old = "https://proj.supabase.co/storage/v1/object/public/uploads/old.jpg"
+    client.patch(f"/api/topics/runs/entries/{entry_id}", json={"image": old})
+
+    assert client.delete(f"/api/topics/runs/entries/{entry_id}").status_code == 200
+    assert deleted == []
+
+
 def test_delete_entry_storage_failure_still_returns_200(client, monkeypatch):
     _set_storage_env(monkeypatch)
 
@@ -341,7 +425,7 @@ def test_delete_entry_storage_failure_still_returns_200(client, monkeypatch):
     monkeypatch.setattr(app_module.storage, "delete_object", boom)
 
     entry_id = make_entry(client)
-    hero_url = BUCKET_PREFIX + "hero.jpg"
+    hero_url = image_url(client, "hero.jpg")
     client.patch(f"/api/topics/runs/entries/{entry_id}", json={"image": hero_url})
 
     res = client.delete(f"/api/topics/runs/entries/{entry_id}")
@@ -386,7 +470,7 @@ def sign_ok(monkeypatch, seen=None):
     monkeypatch.setattr(app_module.storage, "signed_upload_url", fake)
 
 
-def test_sign_upload_returns_an_upload_url_and_the_eventual_public_url(no_db_client, monkeypatch):
+def test_sign_upload_mints_a_key_under_the_users_prefix(no_db_client, monkeypatch):
     keys = []
     sign_ok(monkeypatch, keys)
 
@@ -394,14 +478,52 @@ def test_sign_upload_returns_an_upload_url_and_the_eventual_public_url(no_db_cli
 
     assert res.status_code == 201
     body = res.get_json()
-    assert body["upload_url"].startswith(
-        "https://proj.supabase.co/storage/v1/object/upload/sign/uploads/"
-    )
-    # The key is minted server-side, so the public URL is knowable before the
-    # browser has uploaded anything.
     assert len(keys) == 1
-    assert body["url"] == BUCKET_PREFIX + keys[0]
-    assert keys[0].endswith(".png")
+    assert keys[0].startswith("users/1/") and keys[0].endswith(".png")
+    assert body["upload_url"].endswith(f"/{keys[0]}?token=t")
+    # The DB stores the app path, never a Supabase URL.
+    assert body["url"] == f"/api/images/{keys[0]}"
+    assert "thumb_upload_url" not in body
+
+
+def test_sign_upload_adds_a_thumbnail_url_when_asked(no_db_client, monkeypatch):
+    keys = []
+    sign_ok(monkeypatch, keys)
+
+    res = no_db_client.post("/api/uploads/sign", json={"ext": "jpg", "thumb": True})
+
+    assert res.status_code == 201
+    body = res.get_json()
+    full, thumb = keys
+    assert thumb == full[: -len(".jpg")] + ".thumb"
+    assert body["thumb_upload_url"].endswith(f"/{thumb}?token=t")
+    assert body["url"] == f"/api/images/{full}"
+
+
+@pytest.mark.parametrize("thumb", ["true", 1])
+def test_sign_upload_requires_the_literal_true_for_thumb(no_db_client, monkeypatch, thumb):
+    keys = []
+    sign_ok(monkeypatch, keys)
+
+    res = no_db_client.post("/api/uploads/sign", json={"ext": "png", "thumb": thumb})
+
+    assert res.status_code == 201
+    assert "thumb_upload_url" not in res.get_json()
+
+
+def test_sign_upload_reports_thumbnail_signing_failure_as_json_502(no_db_client, monkeypatch):
+    _set_storage_env(monkeypatch)
+
+    def fake(name, expires_in=None):
+        if name.endswith(".thumb"):
+            raise urllib.error.HTTPError("u", 500, "err", {}, BytesIO(b"down"))
+        return f"https://proj.supabase.co/storage/v1/object/upload/sign/uploads/{name}?token=t"
+    monkeypatch.setattr(app_module.storage, "signed_upload_url", fake)
+
+    res = no_db_client.post("/api/uploads/sign", json={"ext": "jpg", "thumb": True})
+
+    assert res.status_code == 502
+    assert res.get_json()["error"]
 
 
 def test_sign_upload_ignores_a_client_supplied_key(no_db_client, monkeypatch):
@@ -409,13 +531,127 @@ def test_sign_upload_ignores_a_client_supplied_key(no_db_client, monkeypatch):
     sign_ok(monkeypatch, keys)
 
     res = no_db_client.post("/api/uploads/sign",
-                      json={"ext": "png", "name": "../../etc/passwd"})
+                            json={"ext": "png", "name": "../../etc/passwd"})
 
     assert res.status_code == 201
-    assert keys[0] != "../../etc/passwd"
     assert ".." not in keys[0]
-    # Whatever we mint must round-trip, or orphan cleanup can never delete it.
-    assert app_module.storage.object_name_for(res.get_json()["url"]) == keys[0]
+    # Whatever we mint must be readable and deletable by its owner.
+    assert app_module.storage.user_key(keys[0], 1) == keys[0]
+
+
+# --- Reading images -----------------------------------------------------------
+
+def read_ok(monkeypatch, seen, missing=()):
+    """Stub Supabase's read signing; keys in `missing` don't exist."""
+    _set_storage_env(monkeypatch)
+
+    def fake(name, expires_in):
+        seen.append((name, expires_in))
+        if name in missing:
+            raise app_module.storage.NotFound(name)
+        return f"https://proj.supabase.co/storage/v1/object/sign/uploads/{name}?token=t"
+    monkeypatch.setattr(app_module.storage, "signed_read_url", fake)
+
+
+def test_read_image_redirects_to_a_signed_url(no_db_client, monkeypatch):
+    seen = []
+    read_ok(monkeypatch, seen)
+
+    res = no_db_client.get("/api/images/users/1/abc.jpg")
+
+    assert res.status_code == 302
+    assert res.headers["Location"] == (
+        "https://proj.supabase.co/storage/v1/object/sign/uploads/users/1/abc.jpg?token=t")
+    # Shorter than the signature's hour, so a cached redirect is never stale.
+    assert res.headers["Cache-Control"] == "private, max-age=3000"
+    assert seen == [("users/1/abc.jpg", 3600)]
+
+
+def test_read_image_thumb_signs_the_thumbnail(no_db_client, monkeypatch):
+    seen = []
+    read_ok(monkeypatch, seen)
+
+    res = no_db_client.get("/api/images/users/1/abc.jpg?size=thumb")
+
+    assert res.status_code == 302
+    assert res.headers["Location"].endswith("/users/1/abc.thumb?token=t")
+    assert seen == [("users/1/abc.thumb", 3600)]
+
+
+def test_read_image_thumb_falls_back_to_the_full_image(no_db_client, monkeypatch):
+    seen = []
+    read_ok(monkeypatch, seen, missing={"users/1/abc.thumb"})
+
+    res = no_db_client.get("/api/images/users/1/abc.gif?size=thumb")
+
+    assert res.status_code == 302
+    assert res.headers["Location"].endswith("/users/1/abc.gif?token=t")
+    assert seen == [("users/1/abc.thumb", 3600), ("users/1/abc.gif", 3600)]
+
+
+def test_read_image_thumb_404s_when_both_are_missing(no_db_client, monkeypatch):
+    seen = []
+    read_ok(monkeypatch, seen, missing={"users/1/abc.thumb", "users/1/abc.gif"})
+
+    res = no_db_client.get("/api/images/users/1/abc.gif?size=thumb")
+
+    assert res.status_code == 404
+
+
+def test_read_image_thumb_signing_failure_skips_the_full_image(no_db_client, monkeypatch):
+    _set_storage_env(monkeypatch)
+    seen = []
+
+    def fake(name, expires_in):
+        seen.append(name)
+        if name.endswith(".thumb"):
+            raise urllib.error.HTTPError("u", 500, "err", {}, BytesIO(b"down"))
+        return f"https://proj.supabase.co/storage/v1/object/sign/uploads/{name}?token=t"
+    monkeypatch.setattr(app_module.storage, "signed_read_url", fake)
+
+    res = no_db_client.get("/api/images/users/1/abc.jpg?size=thumb")
+
+    assert res.status_code == 502
+    # A non-NotFound failure must not be papered over by the fallback.
+    assert seen == ["users/1/abc.thumb"]
+
+
+@pytest.mark.parametrize("path", [
+    "/api/images/users/2/abc.jpg",          # someone else's
+    "/api/images/abc.jpg",                  # outside users/
+    "/api/images/users/1/a/b.jpg",
+    "/api/images/users/1/..%2F2%2Fabc.jpg",
+    "/api/images/users/1/%2e%2e",
+    "/api/images/users/12/abc.jpg",
+])
+def test_read_image_404s_for_keys_that_are_not_yours(no_db_client, monkeypatch, path):
+    seen = []
+    read_ok(monkeypatch, seen)
+    res = no_db_client.get(path)
+    assert res.status_code == 404
+    assert seen == []  # never asked Supabase, so nothing can be probed
+
+
+def test_read_image_404s_when_the_object_is_gone(no_db_client, monkeypatch):
+    seen = []
+    read_ok(monkeypatch, seen, missing={"users/1/abc.jpg"})
+    assert no_db_client.get("/api/images/users/1/abc.jpg").status_code == 404
+
+
+def test_read_image_reports_storage_failure_as_json_502(no_db_client, monkeypatch):
+    _set_storage_env(monkeypatch)
+
+    def boom(name, expires_in):
+        raise urllib.error.HTTPError("u", 500, "err", {}, BytesIO(b"down"))
+    monkeypatch.setattr(app_module.storage, "signed_read_url", boom)
+
+    res = no_db_client.get("/api/images/users/1/abc.jpg")
+    assert res.status_code == 502
+    assert res.get_json()["error"]
+
+
+def test_read_image_needs_sign_in(anon_client):
+    assert anon_client.get("/api/images/users/1/abc.jpg").status_code == 401
 
 
 @pytest.mark.parametrize("ext", ["heic", "svg", "exe", "", "png.exe", "PNG/../x"])
@@ -467,7 +703,8 @@ def protected_routes():
     for rule in app_module.app.url_map.iter_rules():
         if rule.endpoint in PUBLIC_ENDPOINTS:
             continue
-        path = rule.rule.replace("<int:entry_id>", "1").replace("<slug>", "runs")
+        path = (rule.rule.replace("<int:entry_id>", "1").replace("<slug>", "runs")
+                .replace("<path:key>", "users/1/a.jpg"))
         assert "<" not in path, f"teach protected_routes about {rule.rule}"
         for method in sorted(rule.methods - {"HEAD", "OPTIONS"}):
             yield method, path

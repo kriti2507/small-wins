@@ -10,7 +10,8 @@ Supabase (Postgres + Storage). Do the one-time setup once, then deploys are
    see [Local development](#local-development).
 2. **SQL Editor** → run the contents of `backend/schema.sql` (all tables, with
    RLS on).
-3. **Storage** → new bucket `uploads`, **Public**.
+3. **Storage** → new bucket `uploads`, **Private** (leave "Public bucket" off).
+   Flask signs short-lived read URLs for each user's own images.
 4. Collect these values:
    - `DATABASE_URL` — **Transaction pooler** string (port 6543) for Vercel.
    - `SUPABASE_URL` — project URL.
@@ -80,7 +81,10 @@ With the same env vars exported locally, from the repo root:
 ```
 
 This uploads `backend/data/uploads/*` to Storage and loads all topics, entries,
-and posts into Postgres under that user.
+and posts into Postgres under that user. It still writes old public-bucket
+URLs, so afterwards run `backend/migrate_storage_003.py` as in
+[Upgrading to private storage](#upgrading-to-private-storage-phase-3-part-a),
+or those images won't load from the private bucket.
 
 ## MCP server (optional)
 
@@ -125,6 +129,40 @@ MCP_TOKEN_SECRET=dev-token-secret MCP_SERVICE_TOKEN=dev-service-token \
 .venv/bin/python -m uvicorn --app-dir api mcp_endpoint:app --port 8000
 ```
 
+## Upgrading to private storage (Phase 3, Part A)
+
+Existing deployments created the bucket public with flat keys. To move to
+private per-user storage:
+
+1. Deploy. New uploads go to `users/<id>/`; old public URLs keep loading
+   because the bucket is still public.
+2. From the repo root, with production's `DATABASE_URL`, `SUPABASE_URL` and
+   `SUPABASE_SERVICE_KEY` in the environment (Pillow installed via
+   `backend/requirements.txt`):
+   `.venv/bin/python backend/migrate_storage_003.py --dry-run`, check the
+   plan, then run it without `--dry-run`. Keep the dry-run output: it's the
+   record for reversing the DB rewrite. Look for `skip`/`warn` lines in the
+   output: a missing object is skipped and picked up by a later rerun, and a
+   name it won't touch automatically is printed as `skip (unsafe name,
+   migrate by hand)` for you to move yourself.
+3. Spot-check the app: tiles show thumbnails, entry pages full images. In
+   Supabase → Storage → `uploads`, open a newly uploaded image's object and
+   confirm its `cache-control` header is `max-age=31536000`.
+4. Rerun `migrate_storage_003.py` (it's idempotent) to catch any old URL a
+   still-open editor tab saved back after the first run.
+5. Supabase → Storage → `uploads` → edit bucket → turn **Public** off.
+6. Later, once nothing references the old flat objects:
+   `migrate_storage_003.py --delete-old --dry-run` to see what would go, then
+   `migrate_storage_003.py --delete-old` to report a count (it still deletes
+   nothing), then add `--yes` to actually delete. (`--delete-old` aborts
+   instead of guessing if it finds a URL that looks like it serves the
+   configured bucket but doesn't match `SUPABASE_URL` — check
+   `SUPABASE_URL`/`SUPABASE_BUCKET` and rerun.)
+
+Steps 1–5 are reversible: flip the bucket back to public, and undo the DB
+rewrite from the dry-run log. Between steps 1 and 2, deleting an entry with
+an old URL leaves its object behind; step 6 cleans it up.
+
 ## Signing everyone out
 
 Regenerate `SECRET_KEY`, update it in Vercel, redeploy. Every browser session
@@ -136,8 +174,6 @@ Add their Google email to `ALLOWED_EMAILS` (and, while the consent screen is in
 Testing, to its **Test users**), redeploy. Each new user starts with a default
 "Runs" topic and sees only their own data.
 
-- Uploaded images are readable by anyone who has the URL (public bucket) until
-  Phase 3.
 - Removing someone from `ALLOWED_EMAILS` doesn't end their existing session
   (cookies last up to 30 days) or MCP connection — they keep working, still
   scoped to only their own data. Rotate `SECRET_KEY` / `MCP_TOKEN_SECRET` to cut
