@@ -5,6 +5,7 @@ from PIL import Image
 
 import db
 import migrate_storage_003 as m
+import storage
 from conftest import make_user
 
 OLD = "https://proj.supabase.co/storage/v1/object/public/uploads/"
@@ -32,6 +33,8 @@ class FakeStore:
         self.deleted = []
 
     def download(self, name):
+        if name not in self.objects:
+            raise storage.NotFound(name)
         return self.objects[name]
 
     def upload(self, name, data, content_type, cache_control):
@@ -191,3 +194,102 @@ def test_delete_old_skips_an_unsafe_root_object_name(app_ctx, capsys):
     assert store.deleted == []
     out = capsys.readouterr().out
     assert "skip (unsafe name): my photo.jpg" in out
+
+
+def test_a_missing_object_is_skipped_without_wedging_the_run(app_ctx, capsys):
+    uid = make_user("sub-a", "a@example.com")
+    seed(uid, image=OLD + "missing.jpg", entry_id=1)
+    seed(uid, image=OLD + "ok.jpg", entry_id=2)
+    store = FakeStore({"ok.jpg": (png(), "image/jpeg")})  # missing.jpg absent
+
+    m.migrate(db.get_conn(), store, dry_run=False)
+
+    assert db.find_entry(uid, "runs", 1)["image"] == OLD + "missing.jpg"
+    assert db.find_entry(uid, "runs", 2)["image"] == f"/api/images/users/{uid}/ok.jpg"
+    out = capsys.readouterr().out
+    assert "skip (missing object): missing.jpg" in out
+
+
+def test_corrupt_bytes_still_migrate_the_main_object_without_a_thumbnail(app_ctx, capsys):
+    uid = make_user("sub-a", "a@example.com")
+    seed(uid, image=OLD + "bad.jpg")
+    store = FakeStore({"bad.jpg": (b"not an image", "image/jpeg")})
+
+    m.migrate(db.get_conn(), store, dry_run=False)
+
+    assert store.objects[f"users/{uid}/bad.jpg"] == (b"not an image", "image/jpeg")
+    assert f"users/{uid}/bad.thumb" not in store.objects
+    assert db.find_entry(uid, "runs", 1)["image"] == f"/api/images/users/{uid}/bad.jpg"
+    out = capsys.readouterr().out
+    assert f"warn (no thumbnail): users/{uid}/bad.jpg" in out
+
+
+def test_a_concurrent_edit_during_migration_is_not_clobbered(app_ctx):
+    """move() downloads before the DB transaction opens, so another request
+    can edit the same post in between. The update must re-read inside the
+    transaction and apply only the rewrite, not overwrite with a stale doc."""
+    uid = make_user("sub-a", "a@example.com")
+    seed(uid, figure=OLD + "fig.png")
+
+    class ConcurrentEditStore(FakeStore):
+        def download(self, name):
+            doc = db.load_post(uid, "runs", 1)
+            doc["content"].append({"type": "paragraph", "content": []})
+            db.save_post(uid, "runs", 1, doc)
+            return super().download(name)
+
+    store = ConcurrentEditStore({"fig.png": (png(), "image/png")})
+
+    m.migrate(db.get_conn(), store, dry_run=False)
+
+    doc = db.load_post(uid, "runs", 1)
+    assert doc["content"][-1] == {"type": "paragraph", "content": []}
+    fig = doc["content"][0]["content"][0]
+    assert fig["attrs"]["src"] == f"/api/images/users/{uid}/fig.png"
+
+
+def test_delete_old_aborts_if_a_url_cant_be_recognised_as_ours(app_ctx):
+    """A URL whose path contains our configured bucket's public marker but
+    whose host doesn't match SUPABASE_URL could mean SUPABASE_URL or
+    SUPABASE_BUCKET is misconfigured for this database - delete_old must
+    never guess, and must delete nothing in that case."""
+    uid = make_user("sub-a", "a@example.com")
+    seed(uid, image="https://other-project.supabase.co/storage/v1/object/public/uploads/x.jpg")
+    store = FakeStore({"moved.jpg": (b"x", "image/jpeg")})
+
+    with pytest.raises(SystemExit):
+        m.delete_old(db.get_conn(), store, dry_run=False)
+
+    assert store.deleted == []
+
+
+def test_gif_detected_by_content_type_even_when_the_extension_isnt_gif(app_ctx, capsys):
+    """The thumb-or-not decision and the printed line must agree: both use
+    name-or-content-type, not just the name, once the bytes are in hand."""
+    uid = make_user("sub-a", "a@example.com")
+    seed(uid, image=OLD + "mystery.dat")
+    store = FakeStore({"mystery.dat": (b"GIF89a...", "image/gif")})
+
+    m.migrate(db.get_conn(), store, dry_run=False)
+
+    assert f"users/{uid}/mystery.thumb" not in store.objects
+    out = capsys.readouterr().out
+    [copy_line] = [line for line in out.splitlines() if line.startswith("copy mystery.dat")]
+    assert "+" not in copy_line
+
+
+def test_thumbnail_key_collision_skips_the_second_thumbnail(app_ctx, capsys):
+    uid = make_user("sub-a", "a@example.com")
+    seed(uid, image=OLD + "photo.jpg", entry_id=1)
+    seed(uid, image=OLD + "photo.png", entry_id=2)
+    store = FakeStore({"photo.jpg": (png(), "image/jpeg"), "photo.png": (png(), "image/png")})
+
+    m.migrate(db.get_conn(), store, dry_run=False)
+
+    assert f"users/{uid}/photo.jpg" in store.objects
+    assert f"users/{uid}/photo.png" in store.objects
+    # Exactly one of the two claimed the shared thumbnail key.
+    thumb_uploads = [n for n, _c, _cc in store.uploads if n == f"users/{uid}/photo.thumb"]
+    assert len(thumb_uploads) == 1
+    out = capsys.readouterr().out
+    assert f"warn (thumbnail collision): users/{uid}/photo.thumb" in out

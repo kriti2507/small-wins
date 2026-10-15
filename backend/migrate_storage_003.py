@@ -12,6 +12,10 @@ Run from the repo root against production, with the service key:
 Idempotent: values already under /api/images/ are skipped, and uploads
 overwrite. Old objects are only removed by --delete-old. Needs Pillow
 (backend/requirements.txt), which Vercel doesn't install.
+
+A missing or corrupt source object is logged and skipped rather than
+aborting the whole run - a later run (once the object is restored, or by
+hand) will pick it up.
 """
 import argparse
 import io
@@ -95,36 +99,65 @@ def walk_srcs(doc, fn):
     return walk(doc)
 
 
-def move(store, user_id, name, dry_run):
-    """Copy old object `name` to the user's prefix (+ thumbnail); return its
-    new app path."""
+def move(store, user_id, name, dry_run, used_thumbs):
+    """Copy old object `name` to the user's prefix (+ thumbnail, unless it's
+    a GIF or another name in this run already claimed the same thumbnail
+    key); return its new app path, or None if the object is missing (the
+    caller then leaves the referencing URL alone, for a later run to retry).
+    """
     new = f"users/{user_id}/{name}"
-    is_gif = name.lower().endswith(".gif")
-    print(f"copy {name} -> {new}" + ("" if is_gif else f" (+ {storage.thumb_name_for(new)})"))
+    thumb_key = storage.thumb_name_for(new)
+    data = ctype = None
+
     if not dry_run:
-        data, ctype = store.download(name)
-        store.upload(new, data, ctype, storage.IMMUTABLE_CACHE)
-        if not is_gif and not ctype.startswith("image/gif"):
-            store.upload(storage.thumb_name_for(new), make_thumb(data), "image/webp",
-                         storage.IMMUTABLE_CACHE)
+        try:
+            data, ctype = store.download(name)
+        except storage.NotFound:
+            print(f"skip (missing object): {name}")
+            return None
+        is_gif = name.lower().endswith(".gif") or ctype.startswith("image/gif")
+    else:
+        # No download yet, so GIF-ness can only be guessed from the name.
+        is_gif = name.lower().endswith(".gif")
+
+    collision = not is_gif and thumb_key in used_thumbs
+    if collision:
+        print(f"warn (thumbnail collision): {thumb_key} for {name}")
+    make_thumb_now = not is_gif and not collision
+    print(f"copy {name} -> {new}" + (f" (+ {thumb_key})" if make_thumb_now else ""))
+    if make_thumb_now:
+        used_thumbs[thumb_key] = name
+
+    if dry_run:
+        return storage.image_path_for(new)
+
+    store.upload(new, data, ctype, storage.IMMUTABLE_CACHE)
+    if make_thumb_now:
+        try:
+            thumb_bytes = make_thumb(data)
+            store.upload(thumb_key, thumb_bytes, "image/webp", storage.IMMUTABLE_CACHE)
+        except Exception as exc:
+            print(f"warn (no thumbnail): {new}: {exc}")
     return storage.image_path_for(new)
 
 
 def migrate_user(conn, store, user_id, dry_run):
-    moved = {}  # old url -> new path, so a reused image is copied once
+    moved = {}        # old url -> new path, so a reused image is copied once
+    used_thumbs = {}  # thumb key -> name, so two names can't clobber one thumb
 
     def rewrite(url):
         name = old_name(url)
         if name is None:
-            # Under our old prefix but safe_name refuses the raw name (eg. a
-            # space): don't silently leave it. (safe_name is a strict
-            # allowlist, so this can't be migrated automatically.)
             raw = strip_old_prefix(url)
-            if raw is not None and not storage.safe_name(raw):
+            if raw is not None:
                 print(f"skip (unsafe name, migrate by hand): {url}")
             return url  # already migrated, or not ours
         if url not in moved:
-            moved[url] = move(store, user_id, name, dry_run)
+            new = move(store, user_id, name, dry_run, used_thumbs)
+            # A missing object isn't a successful rewrite: leave the URL as
+            # it was rather than caching None into something that would get
+            # written into a figure's src.
+            moved[url] = new if new is not None else url
         return moved[url]
 
     entries = conn.execute(
@@ -135,30 +168,62 @@ def migrate_user(conn, store, user_id, dry_run):
         "select topic_slug, entry_id, doc from posts where user_id=%s", (user_id,)
     ).fetchall()
 
-    entry_updates = [(rewrite(e["image"]), e) for e in entries]
-    post_updates = [(walk_srcs(p["doc"], rewrite), p) for p in posts]
+    # All the slow network work (download/upload/thumbnail) happens here,
+    # against this first read, and nowhere else. The DB write below re-reads
+    # and re-applies `moved` inside a transaction, so a concurrent edit to
+    # the same row (made while a big upload was in flight) can't be
+    # clobbered by a copy of the row read minutes earlier.
+    for e in entries:
+        rewrite(e["image"])
+    for p in posts:
+        walk_srcs(p["doc"], rewrite)
 
-    for new, e in entry_updates:
-        if new != e["image"]:
-            print(f"user {user_id} entry {e['topic_slug']}/{e['id']}: {e['image']} -> {new}")
-    for new, p in post_updates:
-        if new != p["doc"]:
-            print(f"user {user_id} post {p['topic_slug']}/{p['entry_id']}: figures rewritten")
+    def apply_moved(url):
+        return moved.get(url, url)
+
     if dry_run:
+        for e in entries:
+            new = apply_moved(e["image"])
+            if new != e["image"]:
+                print(f"user {user_id} entry {e['topic_slug']}/{e['id']}: {e['image']} -> {new}")
+        for p in posts:
+            new_doc = walk_srcs(p["doc"], apply_moved)
+            if new_doc != p["doc"]:
+                print(f"user {user_id} post {p['topic_slug']}/{p['entry_id']}: figures rewritten")
         return
 
+    if not moved:
+        return  # nothing under the old prefix for this user; no row to lock
+
     with conn.transaction():
-        for new, e in entry_updates:
+        fresh_entries = conn.execute(
+            "select topic_slug, id, image from entries "
+            "where user_id=%s and image is not null for update",
+            (user_id,),
+        ).fetchall()
+        fresh_posts = conn.execute(
+            "select topic_slug, entry_id, doc from posts where user_id=%s for update",
+            (user_id,),
+        ).fetchall()
+
+        # No network calls from here on - only the `moved` map built above.
+        # A URL that isn't in it (eg. added by a concurrent edit after the
+        # first read) is left untouched; the next run will pick it up.
+        for e in fresh_entries:
+            new = apply_moved(e["image"])
             if new != e["image"]:
+                print(f"user {user_id} entry {e['topic_slug']}/{e['id']}: {e['image']} -> {new}")
                 conn.execute(
                     "update entries set image=%s where user_id=%s and topic_slug=%s and id=%s",
                     (new, user_id, e["topic_slug"], e["id"]),
                 )
-        for new, p in post_updates:
-            if new != p["doc"]:
+        for p in fresh_posts:
+            new_doc = walk_srcs(p["doc"], apply_moved)
+            if new_doc != p["doc"]:
+                print(f"user {user_id} post {p['topic_slug']}/{p['entry_id']}: figures rewritten")
                 conn.execute(
                     "update posts set doc=%s where user_id=%s and topic_slug=%s and entry_id=%s",
-                    (Jsonb(new), user_id, p["topic_slug"], p["entry_id"]),
+                    (Jsonb(new_doc), user_id, p["topic_slug"], p["entry_id"]),
                 )
 
 
@@ -184,8 +249,36 @@ def referenced_old_names(conn):
     return names
 
 
+def unrecognised_public_marker():
+    """The path segment any URL serving our configured bucket's objects
+    would contain, regardless of host - used to catch a misconfigured
+    SUPABASE_URL before --delete-old trusts its own judgement."""
+    bucket = os.environ.get("SUPABASE_BUCKET", "uploads")
+    return f"/storage/v1/object/public/{bucket}/"
+
+
+def check_recognised(url):
+    """Raise if `url` looks like it serves our bucket (same marker) but
+    doesn't match old_prefix() (eg. a different host) - that almost
+    certainly means SUPABASE_URL/SUPABASE_BUCKET is wrong for this database,
+    and --delete-old must never guess in that situation."""
+    marker = unrecognised_public_marker()
+    if isinstance(url, str) and marker in url and not url.startswith(old_prefix()):
+        raise SystemExit(
+            f"abort: {url!r} contains {marker!r} but doesn't start with "
+            f"old_prefix() ({old_prefix()!r}) - check SUPABASE_URL/"
+            "SUPABASE_BUCKET before running --delete-old; deleted nothing"
+        )
+    return url
+
+
 def delete_old(conn, store, dry_run):
     """Delete every object outside users/ that no row references."""
+    for r in conn.execute("select image from entries where image is not null").fetchall():
+        check_recognised(r["image"])
+    for r in conn.execute("select doc from posts").fetchall():
+        walk_srcs(r["doc"], check_recognised)
+
     keep = referenced_old_names(conn)
     for name in store.list_root():
         if not storage.safe_name(name):
