@@ -9,6 +9,7 @@ exceeds, so image bytes must never pass through our own server.
 """
 import json
 import os
+import re
 import urllib.error
 import urllib.request
 
@@ -32,12 +33,14 @@ class NotFound(Exception):
 
 
 def safe_name(name):
-    """A single path segment that can't climb out of its prefix. urllib sends
-    ".." unnormalized and Supabase's edge collapses it, and %, ?, # would
-    change what the key means."""
-    return bool(name) and "/" not in name and ".." not in name and not any(
-        c in name for c in "%?#"
-    )
+    """An allowlisted single path segment. Our own keys are uuid4().hex plus
+    an extension (or ".thumb"); anything else - spaces, control characters,
+    backslashes, non-ASCII, a lone "." - is refused here so it 404s instead of
+    turning into a urllib error. user_key is the sole ownership gate, so this
+    has to be strict."""
+    return bool(name) and ".." not in name and re.fullmatch(
+        r"[A-Za-z0-9_-][A-Za-z0-9._-]*", name
+    ) is not None
 
 
 def user_key(key, user_id):
@@ -45,7 +48,7 @@ def user_key(key, user_id):
 
     The one place that decides which objects a user may read or delete.
     """
-    if not isinstance(key, str):
+    if not isinstance(key, str) or user_id is None:
         return None
     prefix = f"users/{user_id}/"
     if not key.startswith(prefix) or not safe_name(key[len(prefix):]):
@@ -69,7 +72,8 @@ def thumb_name_for(name):
 
 def _is_not_found(err):
     """Supabase Storage answers a missing object with 404, or with 400 and a
-    JSON body whose statusCode is "404"."""
+    JSON body whose statusCode is "404". A missing bucket answers the same
+    way, so a misconfigured bucket also reads as NotFound here."""
     if err.code == 404:
         return True
     if err.code != 400:
@@ -77,6 +81,8 @@ def _is_not_found(err):
     try:
         body = json.loads(err.read() or b"{}")
     except ValueError:
+        return False
+    if not isinstance(body, dict):
         return False
     return str(body.get("statusCode")) == "404" or body.get("error") == "not_found"
 
@@ -87,11 +93,13 @@ def _open(req):
         return urllib.request.urlopen(req)
     except urllib.error.HTTPError as err:
         if _is_not_found(err):
+            err.close()
             raise NotFound(req.full_url) from err
         raise
 
 
 def _authed(req):
+    """Add the service-role credentials Supabase Storage requires."""
     _base, key, _bucket = _cfg()
     req.add_header("Authorization", f"Bearer {key}")
     req.add_header("apikey", key)
@@ -198,11 +206,9 @@ def object_name_for(url):
 def delete_object(name):
     """Delete an object from the bucket. Raises NotFound if it isn't there;
     other exceptions propagate to the caller."""
-    base, key, bucket = _cfg()
-    req = urllib.request.Request(
+    base, _key, bucket = _cfg()
+    req = _authed(urllib.request.Request(
         f"{base}/storage/v1/object/{bucket}/{name}", method="DELETE"
-    )
-    req.add_header("Authorization", f"Bearer {key}")
-    req.add_header("apikey", key)
+    ))
     with _open(req) as resp:
         resp.read()

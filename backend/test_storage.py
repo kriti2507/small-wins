@@ -1,3 +1,6 @@
+import io
+import urllib.error
+
 import pytest
 
 import storage
@@ -172,10 +175,6 @@ def test_object_name_for_returns_none(url):
     assert storage.object_name_for(url) is None
 
 
-import io
-import urllib.error
-
-
 def http_error(status, body=b""):
     return urllib.error.HTTPError("u", status, "err", {}, io.BytesIO(body))
 
@@ -195,11 +194,20 @@ def test_image_path_and_user_key_round_trip():
     "users/7/%2e%2e.jpg",       # encoded
     "users/7/a.jpg?x=1",
     "users/7/a.jpg#x",
+    "users/7/.",                # a lone "."
+    "users/7/a b.jpg",          # space
+    "users/7/a\\b.jpg",         # backslash
+    "users/7/é.jpg",            # non-ASCII
+    "users/7/.hidden",          # leading dot
     "",
     None,
 ])
 def test_user_key_refuses_anything_else(key):
     assert storage.user_key(key, 7) is None
+
+
+def test_user_key_refuses_a_missing_user_id():
+    assert storage.user_key("users/None/x.jpg", None) is None
 
 
 def test_thumb_name_for_swaps_the_extension():
@@ -243,9 +251,19 @@ def test_signed_read_url_raises_not_found_for_a_missing_object(monkeypatch, err)
         storage.signed_read_url("users/7/a.thumb", 3600)
 
 
-def test_signed_read_url_lets_other_errors_through(monkeypatch):
+@pytest.mark.parametrize("err", [
+    pytest.param(lambda: http_error(500, b"boom"), id="500"),
+    # statusCode isn't "404" and error isn't "not_found" - a real client error.
+    pytest.param(lambda: http_error(
+        400, b'{"statusCode":"400","error":"InvalidKey"}'), id="400-other-error"),
+    # Valid JSON but not an object - can't be mistaken for a not-found body.
+    pytest.param(lambda: http_error(400, b"null"), id="400-json-null-body"),
+    # Not JSON at all.
+    pytest.param(lambda: http_error(400, b"oops"), id="400-non-json-body"),
+])
+def test_signed_read_url_lets_other_errors_through(monkeypatch, err):
     def fake_urlopen(req):
-        raise http_error(500, b"boom")
+        raise err()
     monkeypatch.setattr(storage.urllib.request, "urlopen", fake_urlopen)
     with pytest.raises(urllib.error.HTTPError) as exc:
         storage.signed_read_url("users/7/a.jpg", 3600)
@@ -288,3 +306,15 @@ def test_upload_bytes_sends_cache_control_when_given(monkeypatch):
     monkeypatch.setattr(storage.urllib.request, "urlopen", fake_urlopen)
     storage.upload_bytes("users/7/a.jpg", b"x", "image/jpeg", cache_control="max-age=31536000")
     assert seen["cache"] == "max-age=31536000"
+
+
+def test_upload_bytes_sends_no_cache_control_when_not_given(monkeypatch):
+    seen = {}
+
+    def fake_urlopen(req):
+        seen["cache"] = req.get_header("Cache-control")
+        return FakeResp()
+
+    monkeypatch.setattr(storage.urllib.request, "urlopen", fake_urlopen)
+    storage.upload_bytes("users/7/a.jpg", b"x", "image/jpeg")
+    assert seen["cache"] is None
