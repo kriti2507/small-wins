@@ -180,6 +180,27 @@ def object_name_for(url, user_id):
     return user_key(url[len(IMAGE_PATH_PREFIX):], user_id)
 
 
+def list_root_objects():
+    """Names of the objects at the bucket root (not under any folder). Used
+    by the migration script's --delete-old."""
+    base, _key, bucket = _cfg()
+    names, offset = [], 0
+    while True:
+        req = _authed(urllib.request.Request(
+            f"{base}/storage/v1/object/list/{bucket}",
+            data=json.dumps({"prefix": "", "limit": 1000, "offset": offset}).encode(),
+            method="POST",
+        ))
+        req.add_header("Content-Type", "application/json")
+        with _open(req) as resp:
+            page = json.loads(resp.read())
+        # Folders (like users/) come back with a null id.
+        names += [o["name"] for o in page if o.get("id")]
+        if len(page) < 1000:
+            return names
+        offset += 1000
+
+
 def delete_object(name):
     """Delete an object from the bucket. Raises NotFound if it isn't there;
     other exceptions propagate to the caller."""

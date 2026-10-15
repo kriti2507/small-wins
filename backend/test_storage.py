@@ -270,3 +270,17 @@ def test_upload_bytes_sends_no_cache_control_when_not_given(monkeypatch):
     monkeypatch.setattr(storage.urllib.request, "urlopen", fake_urlopen)
     storage.upload_bytes("users/7/a.jpg", b"x", "image/jpeg")
     assert seen["cache"] is None
+
+
+def test_list_root_objects_skips_folders(monkeypatch):
+    seen = {}
+
+    def fake_urlopen(req):
+        seen["url"] = req.full_url
+        seen["data"] = req.data
+        return FakeResp(b'[{"name": "users", "id": null}, {"name": "a.jpg", "id": "1"}]')
+
+    monkeypatch.setattr(storage.urllib.request, "urlopen", fake_urlopen)
+    assert storage.list_root_objects() == ["a.jpg"]
+    assert seen["url"] == "https://proj.supabase.co/storage/v1/object/list/uploads"
+    assert b'"prefix": ""' in seen["data"]
