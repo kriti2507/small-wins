@@ -1,5 +1,10 @@
-import { describe, it, expect } from "vitest";
-import { readJson, httpErrorMessage } from "./client";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { readJson, httpErrorMessage, uploadImage } from "./client";
+
+vi.mock("../lib/image", () => ({
+  prepareImage: vi.fn(),
+}));
+import { prepareImage } from "../lib/image";
 
 const res = (status: number, body: string, statusText = "") => ({
   ok: status >= 200 && status < 300,
@@ -55,5 +60,77 @@ describe("httpErrorMessage", () => {
     expect(httpErrorMessage(413)).toMatch(/too large/i);
     expect(httpErrorMessage(401)).toMatch(/sign in again/i);
     expect(httpErrorMessage(403)).not.toMatch(/admin/i);
+  });
+});
+
+const okJson = (body: unknown) =>
+  new Response(JSON.stringify(body), { status: 201, headers: { "Content-Type": "application/json" } });
+
+describe("uploadImage", () => {
+  const calls: { url: string; init?: RequestInit }[] = [];
+  let thumbStatus = 200;
+
+  beforeEach(() => {
+    calls.length = 0;
+    thumbStatus = 200;
+    vi.stubGlobal("fetch", vi.fn(async (url: string, init?: RequestInit) => {
+      calls.push({ url, init });
+      if (url === "/api/uploads/sign") {
+        const asked = JSON.parse(String(init?.body));
+        return okJson({
+          upload_url: "https://s/full",
+          url: "/api/images/users/1/a.jpg",
+          ...(asked.thumb ? { thumb_upload_url: "https://s/thumb" } : {}),
+        });
+      }
+      if (url === "https://s/thumb") return new Response("", { status: thumbStatus });
+      return new Response("", { status: 200 });
+    }));
+  });
+  afterEach(() => vi.unstubAllGlobals());
+
+  const file = new File(["x"], "a.jpg", { type: "image/jpeg" });
+
+  it("uploads the image and its thumbnail with a one-year cache header", async () => {
+    vi.mocked(prepareImage).mockResolvedValue({
+      blob: new Blob(["full"], { type: "image/jpeg" }),
+      ext: "jpg",
+      thumb: new Blob(["t"], { type: "image/webp" }),
+    });
+
+    await expect(uploadImage(file)).resolves.toEqual({ url: "/api/images/users/1/a.jpg" });
+
+    expect(JSON.parse(String(calls[0].init?.body))).toEqual({ ext: "jpg", thumb: true });
+    const full = calls.find((c) => c.url === "https://s/full")!;
+    const thumb = calls.find((c) => c.url === "https://s/thumb")!;
+    expect(full.init?.headers).toMatchObject({
+      "Content-Type": "image/jpeg",
+      "cache-control": "max-age=31536000",
+    });
+    expect(thumb.init?.headers).toMatchObject({
+      "Content-Type": "image/webp",
+      "cache-control": "max-age=31536000",
+    });
+  });
+
+  it("succeeds even when the thumbnail upload fails", async () => {
+    thumbStatus = 500;
+    vi.mocked(prepareImage).mockResolvedValue({
+      blob: new Blob(["full"], { type: "image/jpeg" }),
+      ext: "jpg",
+      thumb: new Blob(["t"], { type: "image/webp" }),
+    });
+    await expect(uploadImage(file)).resolves.toEqual({ url: "/api/images/users/1/a.jpg" });
+  });
+
+  it("asks for no thumbnail when there is none (GIFs)", async () => {
+    vi.mocked(prepareImage).mockResolvedValue({
+      blob: new Blob(["gif"], { type: "image/gif" }),
+      ext: "gif",
+      thumb: null,
+    });
+    await uploadImage(file);
+    expect(JSON.parse(String(calls[0].init?.body))).toEqual({ ext: "gif", thumb: false });
+    expect(calls.map((c) => c.url)).toEqual(["/api/uploads/sign", "https://s/full"]);
   });
 });

@@ -8,6 +8,7 @@
 export const MAX_DIM = 2000; // longest edge, comfortably past any display size
 export const QUALITY = 0.85;
 export const SKIP_BYTES = 512 * 1024; // already light enough to leave alone
+export const THUMB_DIM = 600; // long edge of the small copy entry tiles load
 
 export interface Fit {
   width: number;
@@ -62,10 +63,34 @@ function toBlob(canvas: HTMLCanvasElement, type: string): Promise<Blob | null> {
   return new Promise((resolve) => canvas.toBlob(resolve, type, QUALITY));
 }
 
-/** The bytes to upload for `file`, plus the extension to register them under. */
-export async function prepareImage(
-  file: File,
-): Promise<{ blob: Blob; ext: string }> {
+/** Draw `bitmap` at `fit` and encode it, or null if the canvas can't. */
+async function render(bitmap: ImageBitmap, fit: Fit, type: string): Promise<Blob | null> {
+  const canvas = document.createElement("canvas");
+  canvas.width = fit.width;
+  canvas.height = fit.height;
+  const ctx = canvas.getContext("2d");
+  if (!ctx) return null;
+  if (type === "image/jpeg") {
+    // JPEG has no alpha; without this, transparent pixels come out black.
+    ctx.fillStyle = "#fff";
+    ctx.fillRect(0, 0, fit.width, fit.height);
+  }
+  ctx.drawImage(bitmap, 0, 0, fit.width, fit.height);
+  return toBlob(canvas, type);
+}
+
+export interface Prepared {
+  blob: Blob;
+  ext: string;
+  /** A ≤THUMB_DIM copy for entry tiles; null for GIFs (it would lose the
+   * animation) or if it couldn't be made — the server then serves the full
+   * image in its place. */
+  thumb: Blob | null;
+}
+
+/** The bytes to upload for `file`, the extension to register them under,
+ * and a thumbnail made from the same decoded image. */
+export async function prepareImage(file: File): Promise<Prepared> {
   const asIs = () => {
     const ext = extFor(file.type);
     if (!ext) {
@@ -74,7 +99,7 @@ export async function prepareImage(
     return { blob: file as Blob, ext };
   };
 
-  if (file.type === "image/gif") return asIs();
+  if (file.type === "image/gif") return { ...asIs(), thumb: null };
 
   let bitmap: ImageBitmap;
   try {
@@ -84,33 +109,24 @@ export async function prepareImage(
     throw new Error("Could not read that image. Try JPEG, PNG or WebP.");
   }
 
-  const fit = fitWithin(bitmap.width, bitmap.height);
-  const ctx = (() => {
-    if (!shouldReencode(file, fit)) return null;
-    const canvas = document.createElement("canvas");
-    canvas.width = fit.width;
-    canvas.height = fit.height;
-    return canvas.getContext("2d");
-  })();
+  try {
+    const type = encodeType();
+    const thumb = await render(bitmap, fitWithin(bitmap.width, bitmap.height, THUMB_DIM), type);
 
-  if (!ctx) {
+    const fit = fitWithin(bitmap.width, bitmap.height);
+    if (!shouldReencode(file, fit)) return { ...asIs(), thumb };
+
+    const blob = await render(bitmap, fit, type);
+    // Re-encoding can lose to an already well-compressed original; if we didn't
+    // need to shrink it either, the original is the better upload.
+    if (!blob || (!fit.scaled && blob.size >= file.size)) return { ...asIs(), thumb };
+
+    return {
+      blob,
+      ext: extFor(blob.type) || (type === "image/webp" ? "webp" : "jpg"),
+      thumb,
+    };
+  } finally {
     bitmap.close();
-    return asIs();
   }
-
-  const type = encodeType();
-  if (type === "image/jpeg") {
-    // JPEG has no alpha; without this, transparent pixels come out black.
-    ctx.fillStyle = "#fff";
-    ctx.fillRect(0, 0, fit.width, fit.height);
-  }
-  ctx.drawImage(bitmap, 0, 0, fit.width, fit.height);
-  bitmap.close();
-
-  const blob = await toBlob(ctx.canvas, type);
-  // Re-encoding can lose to an already well-compressed original; if we didn't
-  // need to shrink it either, the original is the better upload.
-  if (!blob || (!fit.scaled && blob.size >= file.size)) return asIs();
-
-  return { blob, ext: extFor(blob.type) || (type === "image/webp" ? "webp" : "jpg") };
 }

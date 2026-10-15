@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { fitWithin, shouldReencode, extFor, MAX_DIM, SKIP_BYTES } from "./image";
+import { fitWithin, shouldReencode, extFor, MAX_DIM, SKIP_BYTES, THUMB_DIM } from "./image";
 
 const mb = (n: number) => n * 1024 * 1024;
 
@@ -69,5 +69,16 @@ describe("extFor", () => {
     expect(extFor("image/heic")).toBe("");
     expect(extFor("image/svg+xml")).toBe("");
     expect(extFor("")).toBe("");
+  });
+});
+
+describe("fitWithin for thumbnails", () => {
+  it("fits the long edge to THUMB_DIM", () => {
+    expect(fitWithin(1800, 900, THUMB_DIM)).toEqual({ width: 600, height: 300, scaled: true });
+    expect(fitWithin(900, 1800, THUMB_DIM)).toEqual({ width: 300, height: 600, scaled: true });
+  });
+
+  it("never upscales a small image", () => {
+    expect(fitWithin(300, 200, THUMB_DIM)).toEqual({ width: 300, height: 200, scaled: false });
   });
 });

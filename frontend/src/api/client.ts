@@ -119,26 +119,45 @@ export function setTopicLayout(slug: string, layout: string): Promise<Topic> {
   }).then((r) => json<Topic>(r));
 }
 
-/** Upload an image and return the URL it will be served from.
+// Upload keys are random and never reused, so the bytes behind one never
+// change and browsers may keep them for a year.
+const IMMUTABLE = "max-age=31536000";
+
+function putBlob(url: string, blob: Blob): Promise<Response> {
+  return fetch(url, {
+    method: "PUT",
+    headers: {
+      "Content-Type": blob.type || "application/octet-stream",
+      "cache-control": IMMUTABLE,
+    },
+    body: blob,
+  });
+}
+
+/** Upload an image (and its thumbnail) and return the path it is served at.
  *
  * The bytes go from the browser straight to Supabase Storage. Routing them
  * through our own API instead would 413 at Vercel's edge, which caps a
  * function's request body at 4.5 MB — below an ordinary phone photo.
  */
 export async function uploadImage(file: File): Promise<{ url: string }> {
-  const { blob, ext } = await prepareImage(file);
+  const { blob, ext, thumb } = await prepareImage(file);
 
-  const { upload_url, url } = await fetch("/api/uploads/sign", {
+  const { upload_url, thumb_upload_url, url } = await fetch("/api/uploads/sign", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ ext }),
-  }).then((r) => json<{ upload_url: string; url: string }>(r));
+    body: JSON.stringify({ ext, thumb: thumb !== null }),
+  }).then((r) => json<{ upload_url: string; thumb_upload_url?: string; url: string }>(r));
 
-  const res = await fetch(upload_url, {
-    method: "PUT",
-    headers: { "Content-Type": blob.type || "application/octet-stream" },
-    body: blob,
-  });
+  // A missing thumbnail only costs speed (the server falls back to the full
+  // image), so its failure never fails the upload.
+  const thumbDone =
+    thumb && thumb_upload_url
+      ? putBlob(thumb_upload_url, thumb).catch(() => undefined)
+      : Promise.resolve(undefined);
+
+  const res = await putBlob(upload_url, blob);
+  await thumbDone;
   if (!res.ok) {
     throw new Error(httpErrorMessage(res.status, res.statusText));
   }
