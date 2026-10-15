@@ -3,6 +3,7 @@ import type { Topic, Entry } from "../types";
 import { tileModel } from "../lib/tile";
 import { hasPost } from "../lib/post";
 import { rampFor } from "../lib/palette";
+import { thumbSrc } from "../lib/image";
 
 interface Props {
   topic: Topic;
@@ -32,8 +33,10 @@ export default function EntryList({ topic, entries, colorIndex }: Props) {
               <span className="initial">{t.initial}</span>
               {t.image && (
                 <img
-                  src={t.image}
+                  src={thumbSrc(t.image)}
                   alt={t.heading}
+                  loading="lazy"
+                  decoding="async"
                   onError={(e) => e.currentTarget.remove()}
                 />
               )}

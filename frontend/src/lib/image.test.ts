@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { fitWithin, shouldReencode, extFor, MAX_DIM, SKIP_BYTES, THUMB_DIM } from "./image";
+import { fitWithin, shouldReencode, extFor, thumbSrc, MAX_DIM, SKIP_BYTES, THUMB_DIM } from "./image";
 
 const mb = (n: number) => n * 1024 * 1024;
 
@@ -80,5 +80,18 @@ describe("fitWithin for thumbnails", () => {
 
   it("never upscales a small image", () => {
     expect(fitWithin(300, 200, THUMB_DIM)).toEqual({ width: 300, height: 200, scaled: false });
+  });
+});
+
+describe("thumbSrc", () => {
+  it("asks our image route for the thumbnail", () => {
+    expect(thumbSrc("/api/images/users/1/a.jpg")).toBe("/api/images/users/1/a.jpg?size=thumb");
+  });
+
+  it("leaves URLs it doesn't serve alone", () => {
+    // Pre-migration public URLs and anything external have no thumbnail.
+    const old = "https://proj.supabase.co/storage/v1/object/public/uploads/a.jpg";
+    expect(thumbSrc(old)).toBe(old);
+    expect(thumbSrc("https://example.com/a.jpg")).toBe("https://example.com/a.jpg");
   });
 });

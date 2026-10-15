@@ -44,7 +44,7 @@ export const Figure = Node.create({
     return [
       "figure",
       { "data-figure": "", "data-width": node.attrs.width },
-      ["img", { src: node.attrs.src, alt: "" }],
+      ["img", { src: node.attrs.src, alt: "", loading: "lazy", decoding: "async" }],
       ["figcaption", 0],
     ];
   },

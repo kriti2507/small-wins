@@ -10,6 +10,12 @@ export const QUALITY = 0.85;
 export const SKIP_BYTES = 512 * 1024; // already light enough to leave alone
 export const THUMB_DIM = 600; // long edge of the small copy entry tiles load
 
+/** The small version of an uploaded image, for tiles. Only our own
+ * /api/images/ paths have one. */
+export function thumbSrc(src: string): string {
+  return src.startsWith("/api/images/") ? `${src}?size=thumb` : src;
+}
+
 export interface Fit {
   width: number;
   height: number;
