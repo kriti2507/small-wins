@@ -81,7 +81,10 @@ With the same env vars exported locally, from the repo root:
 ```
 
 This uploads `backend/data/uploads/*` to Storage and loads all topics, entries,
-and posts into Postgres under that user.
+and posts into Postgres under that user. It still writes old public-bucket
+URLs, so afterwards run `backend/migrate_storage_003.py` as in
+[Upgrading to private storage](#upgrading-to-private-storage-phase-3-part-a),
+or those images won't load from the private bucket.
 
 ## MCP server (optional)
 
@@ -145,8 +148,10 @@ private per-user storage:
 3. Spot-check the app: tiles show thumbnails, entry pages full images. In
    Supabase → Storage → `uploads`, open a newly uploaded image's object and
    confirm its `cache-control` header is `max-age=31536000`.
-4. Supabase → Storage → `uploads` → edit bucket → turn **Public** off.
-5. Later, once nothing references the old flat objects:
+4. Rerun `migrate_storage_003.py` (it's idempotent) to catch any old URL a
+   still-open editor tab saved back after the first run.
+5. Supabase → Storage → `uploads` → edit bucket → turn **Public** off.
+6. Later, once nothing references the old flat objects:
    `migrate_storage_003.py --delete-old --dry-run` to see what would go, then
    `migrate_storage_003.py --delete-old` to report a count (it still deletes
    nothing), then add `--yes` to actually delete. (`--delete-old` aborts
@@ -154,9 +159,9 @@ private per-user storage:
    configured bucket but doesn't match `SUPABASE_URL` — check
    `SUPABASE_URL`/`SUPABASE_BUCKET` and rerun.)
 
-Steps 1–4 are reversible: flip the bucket back to public, and undo the DB
+Steps 1–5 are reversible: flip the bucket back to public, and undo the DB
 rewrite from the dry-run log. Between steps 1 and 2, deleting an entry with
-an old URL leaves its object behind; step 5 cleans it up.
+an old URL leaves its object behind; step 6 cleans it up.
 
 ## Signing everyone out
 
