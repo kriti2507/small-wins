@@ -4,7 +4,7 @@ import uuid
 from datetime import timedelta
 
 from dotenv import load_dotenv
-from flask import Flask, g, jsonify, request
+from flask import Flask, g, jsonify, redirect, request
 
 import auth
 import db
@@ -62,6 +62,10 @@ LAYOUTS = ("photo-top", "thumbnail")
 ALLOWED_EXT = {"png", "jpg", "jpeg", "gif", "webp"}
 MAX_BODY_BYTES = 1_000_000  # serialized cap; well under the 5 MB request limit
 UPLOAD_URL_TTL_SECONDS = 600  # long enough to upload a photo on a slow phone
+READ_URL_TTL_SECONDS = 3600
+# The browser may reuse a redirect this long; it must end before the signed
+# URL it points at does.
+READ_REDIRECT_MAX_AGE = 3000
 
 import re  # noqa: E402  (kept next to its only user)
 
@@ -193,7 +197,8 @@ def sign_upload():
     multipart upload through here 413s at the edge before Flask ever runs.
 
     We mint the key rather than trusting the client's filename, which keeps
-    the object inside the bucket and lets object_name_for reclaim it later.
+    the object under this user's prefix — the only place read_image and
+    delete_entry will look.
     """
     data = request.get_json(silent=True)
     if not isinstance(data, dict):
@@ -202,16 +207,56 @@ def sign_upload():
     if ext not in ALLOWED_EXT:
         return jsonify({"error": "Unsupported file type."}), 400
 
-    name = f"{uuid.uuid4().hex}.{ext}"
+    name = f"users/{g.user_id}/{uuid.uuid4().hex}.{ext}"
+    want_thumb = data.get("thumb") is True
     try:
-        upload_url = storage.signed_upload_url(name, UPLOAD_URL_TTL_SECONDS)
+        out = {"upload_url": storage.signed_upload_url(name, UPLOAD_URL_TTL_SECONDS)}
+        if want_thumb:
+            out["thumb_upload_url"] = storage.signed_upload_url(
+                storage.thumb_name_for(name), UPLOAD_URL_TTL_SECONDS
+            )
     except Exception:
         # Never let this become Flask's HTML 500 page: the client parses every
         # response as JSON, so an HTML body surfaces as a parser error.
         app.logger.exception("could not sign an upload URL")
         return jsonify({"error": "Could not start the upload. Try again."}), 502
 
-    return jsonify({"upload_url": upload_url, "url": storage.public_url_for(name)}), 201
+    out["url"] = storage.image_path_for(name)
+    return jsonify(out), 201
+
+
+# --- Images API ------------------------------------------------------------
+
+@app.route("/api/images/<path:key>", methods=["GET"])
+@auth.login_required
+def read_image(key):
+    """Send the browser to a short-lived signed URL for one of its own images.
+
+    The bucket is private, so this ownership check is the only way in. Keys
+    that aren't the caller's 404 rather than 403, so other users' keys can't
+    be probed.
+    """
+    name = storage.user_key(key, g.user_id)
+    if name is None:
+        return jsonify({"error": "Not found."}), 404
+    try:
+        if request.args.get("size") == "thumb":
+            try:
+                url = storage.signed_read_url(storage.thumb_name_for(name), READ_URL_TTL_SECONDS)
+            except storage.NotFound:
+                # GIFs and images uploaded without one have no thumbnail.
+                url = storage.signed_read_url(name, READ_URL_TTL_SECONDS)
+        else:
+            url = storage.signed_read_url(name, READ_URL_TTL_SECONDS)
+    except storage.NotFound:
+        return jsonify({"error": "Not found."}), 404
+    except Exception:
+        app.logger.exception("could not sign a read URL")
+        return jsonify({"error": "Could not load the image."}), 502
+
+    res = redirect(url, 302)
+    res.headers["Cache-Control"] = f"private, max-age={READ_REDIRECT_MAX_AGE}"
+    return res
 
 
 # --- Entries API -----------------------------------------------------------

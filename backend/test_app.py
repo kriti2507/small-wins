@@ -386,7 +386,7 @@ def sign_ok(monkeypatch, seen=None):
     monkeypatch.setattr(app_module.storage, "signed_upload_url", fake)
 
 
-def test_sign_upload_returns_an_upload_url_and_the_eventual_public_url(no_db_client, monkeypatch):
+def test_sign_upload_mints_a_key_under_the_users_prefix(no_db_client, monkeypatch):
     keys = []
     sign_ok(monkeypatch, keys)
 
@@ -394,14 +394,26 @@ def test_sign_upload_returns_an_upload_url_and_the_eventual_public_url(no_db_cli
 
     assert res.status_code == 201
     body = res.get_json()
-    assert body["upload_url"].startswith(
-        "https://proj.supabase.co/storage/v1/object/upload/sign/uploads/"
-    )
-    # The key is minted server-side, so the public URL is knowable before the
-    # browser has uploaded anything.
     assert len(keys) == 1
-    assert body["url"] == BUCKET_PREFIX + keys[0]
-    assert keys[0].endswith(".png")
+    assert keys[0].startswith("users/1/") and keys[0].endswith(".png")
+    assert body["upload_url"].endswith(f"/{keys[0]}?token=t")
+    # The DB stores the app path, never a Supabase URL.
+    assert body["url"] == f"/api/images/{keys[0]}"
+    assert "thumb_upload_url" not in body
+
+
+def test_sign_upload_adds_a_thumbnail_url_when_asked(no_db_client, monkeypatch):
+    keys = []
+    sign_ok(monkeypatch, keys)
+
+    res = no_db_client.post("/api/uploads/sign", json={"ext": "jpg", "thumb": True})
+
+    assert res.status_code == 201
+    body = res.get_json()
+    full, thumb = keys
+    assert thumb == full[: -len(".jpg")] + ".thumb"
+    assert body["thumb_upload_url"].endswith(f"/{thumb}?token=t")
+    assert body["url"] == f"/api/images/{full}"
 
 
 def test_sign_upload_ignores_a_client_supplied_key(no_db_client, monkeypatch):
@@ -409,13 +421,99 @@ def test_sign_upload_ignores_a_client_supplied_key(no_db_client, monkeypatch):
     sign_ok(monkeypatch, keys)
 
     res = no_db_client.post("/api/uploads/sign",
-                      json={"ext": "png", "name": "../../etc/passwd"})
+                            json={"ext": "png", "name": "../../etc/passwd"})
 
     assert res.status_code == 201
-    assert keys[0] != "../../etc/passwd"
     assert ".." not in keys[0]
-    # Whatever we mint must round-trip, or orphan cleanup can never delete it.
-    assert app_module.storage.object_name_for(res.get_json()["url"]) == keys[0]
+    # Whatever we mint must be readable and deletable by its owner.
+    assert app_module.storage.user_key(keys[0], 1) == keys[0]
+
+
+# --- Reading images -----------------------------------------------------------
+
+def read_ok(monkeypatch, seen, missing=()):
+    """Stub Supabase's read signing; keys in `missing` don't exist."""
+    _set_storage_env(monkeypatch)
+
+    def fake(name, expires_in):
+        seen.append((name, expires_in))
+        if name in missing:
+            raise app_module.storage.NotFound(name)
+        return f"https://proj.supabase.co/storage/v1/object/sign/uploads/{name}?token=t"
+    monkeypatch.setattr(app_module.storage, "signed_read_url", fake)
+
+
+def test_read_image_redirects_to_a_signed_url(no_db_client, monkeypatch):
+    seen = []
+    read_ok(monkeypatch, seen)
+
+    res = no_db_client.get("/api/images/users/1/abc.jpg")
+
+    assert res.status_code == 302
+    assert res.headers["Location"] == (
+        "https://proj.supabase.co/storage/v1/object/sign/uploads/users/1/abc.jpg?token=t")
+    # Shorter than the signature's hour, so a cached redirect is never stale.
+    assert res.headers["Cache-Control"] == "private, max-age=3000"
+    assert seen == [("users/1/abc.jpg", 3600)]
+
+
+def test_read_image_thumb_signs_the_thumbnail(no_db_client, monkeypatch):
+    seen = []
+    read_ok(monkeypatch, seen)
+
+    res = no_db_client.get("/api/images/users/1/abc.jpg?size=thumb")
+
+    assert res.status_code == 302
+    assert res.headers["Location"].endswith("/users/1/abc.thumb?token=t")
+    assert seen == [("users/1/abc.thumb", 3600)]
+
+
+def test_read_image_thumb_falls_back_to_the_full_image(no_db_client, monkeypatch):
+    seen = []
+    read_ok(monkeypatch, seen, missing={"users/1/abc.thumb"})
+
+    res = no_db_client.get("/api/images/users/1/abc.gif?size=thumb")
+
+    assert res.status_code == 302
+    assert res.headers["Location"].endswith("/users/1/abc.gif?token=t")
+
+
+@pytest.mark.parametrize("path", [
+    "/api/images/users/2/abc.jpg",          # someone else's
+    "/api/images/abc.jpg",                  # outside users/
+    "/api/images/users/1/a/b.jpg",
+    "/api/images/users/1/..%2F2%2Fabc.jpg",
+    "/api/images/users/1/%2e%2e",
+    "/api/images/users/12/abc.jpg",
+])
+def test_read_image_404s_for_keys_that_are_not_yours(no_db_client, monkeypatch, path):
+    seen = []
+    read_ok(monkeypatch, seen)
+    res = no_db_client.get(path)
+    assert res.status_code == 404
+    assert seen == []  # never asked Supabase, so nothing can be probed
+
+
+def test_read_image_404s_when_the_object_is_gone(no_db_client, monkeypatch):
+    seen = []
+    read_ok(monkeypatch, seen, missing={"users/1/abc.jpg"})
+    assert no_db_client.get("/api/images/users/1/abc.jpg").status_code == 404
+
+
+def test_read_image_reports_storage_failure_as_json_502(no_db_client, monkeypatch):
+    _set_storage_env(monkeypatch)
+
+    def boom(name, expires_in):
+        raise urllib.error.HTTPError("u", 500, "err", {}, BytesIO(b"down"))
+    monkeypatch.setattr(app_module.storage, "signed_read_url", boom)
+
+    res = no_db_client.get("/api/images/users/1/abc.jpg")
+    assert res.status_code == 502
+    assert res.get_json()["error"]
+
+
+def test_read_image_needs_sign_in(anon_client):
+    assert anon_client.get("/api/images/users/1/abc.jpg").status_code == 401
 
 
 @pytest.mark.parametrize("ext", ["heic", "svg", "exe", "", "png.exe", "PNG/../x"])
@@ -467,7 +565,8 @@ def protected_routes():
     for rule in app_module.app.url_map.iter_rules():
         if rule.endpoint in PUBLIC_ENDPOINTS:
             continue
-        path = rule.rule.replace("<int:entry_id>", "1").replace("<slug>", "runs")
+        path = (rule.rule.replace("<int:entry_id>", "1").replace("<slug>", "runs")
+                .replace("<path:key>", "users/1/a.jpg"))
         assert "<" not in path, f"teach protected_routes about {rule.rule}"
         for method in sorted(rule.methods - {"HEAD", "OPTIONS"}):
             yield method, path
