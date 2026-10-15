@@ -170,3 +170,121 @@ def test_object_name_for_round_trips_with_upload_bytes(monkeypatch):
 )
 def test_object_name_for_returns_none(url):
     assert storage.object_name_for(url) is None
+
+
+import io
+import urllib.error
+
+
+def http_error(status, body=b""):
+    return urllib.error.HTTPError("u", status, "err", {}, io.BytesIO(body))
+
+
+def test_image_path_and_user_key_round_trip():
+    assert storage.image_path_for("users/7/abc.jpg") == "/api/images/users/7/abc.jpg"
+    assert storage.user_key("users/7/abc.jpg", 7) == "users/7/abc.jpg"
+
+
+@pytest.mark.parametrize("key", [
+    "users/8/abc.jpg",          # another user
+    "users/70/abc.jpg",         # prefix of a longer id must not match
+    "abc.jpg",                  # outside users/
+    "users/7/",                 # empty name
+    "users/7/a/b.jpg",          # nested
+    "users/7/../8/abc.jpg",     # traversal
+    "users/7/%2e%2e.jpg",       # encoded
+    "users/7/a.jpg?x=1",
+    "users/7/a.jpg#x",
+    "",
+    None,
+])
+def test_user_key_refuses_anything_else(key):
+    assert storage.user_key(key, 7) is None
+
+
+def test_thumb_name_for_swaps_the_extension():
+    assert storage.thumb_name_for("users/7/abc.jpg") == "users/7/abc.thumb"
+    assert storage.thumb_name_for("users/7/abc") == "users/7/abc.thumb"
+
+
+def test_signed_read_url_signs_and_absolutizes(monkeypatch):
+    calls = {}
+
+    def fake_urlopen(req):
+        calls["url"] = req.full_url
+        calls["method"] = req.get_method()
+        calls["auth"] = req.get_header("Authorization")
+        calls["data"] = req.data
+        return FakeResp(b'{"signedURL": "/object/sign/uploads/users/7/a.jpg?token=t"}')
+
+    monkeypatch.setattr(storage.urllib.request, "urlopen", fake_urlopen)
+
+    url = storage.signed_read_url("users/7/a.jpg", 3600)
+
+    assert calls["url"] == "https://proj.supabase.co/storage/v1/object/sign/uploads/users/7/a.jpg"
+    assert calls["method"] == "POST"
+    assert calls["auth"] == "Bearer svc"
+    assert calls["data"] == b'{"expiresIn": 3600}'
+    assert url == "https://proj.supabase.co/storage/v1/object/sign/uploads/users/7/a.jpg?token=t"
+
+
+@pytest.mark.parametrize("err", [
+    pytest.param(lambda: http_error(404), id="404"),
+    # Supabase Storage reports a missing object as HTTP 400 with this body.
+    pytest.param(lambda: http_error(
+        400, b'{"statusCode":"404","error":"not_found","message":"Object not found"}'),
+        id="400-not-found-body"),
+])
+def test_signed_read_url_raises_not_found_for_a_missing_object(monkeypatch, err):
+    def fake_urlopen(req):
+        raise err()
+    monkeypatch.setattr(storage.urllib.request, "urlopen", fake_urlopen)
+    with pytest.raises(storage.NotFound):
+        storage.signed_read_url("users/7/a.thumb", 3600)
+
+
+def test_signed_read_url_lets_other_errors_through(monkeypatch):
+    def fake_urlopen(req):
+        raise http_error(500, b"boom")
+    monkeypatch.setattr(storage.urllib.request, "urlopen", fake_urlopen)
+    with pytest.raises(urllib.error.HTTPError) as exc:
+        storage.signed_read_url("users/7/a.jpg", 3600)
+    assert not isinstance(exc.value, storage.NotFound)
+
+
+def test_delete_object_raises_not_found_for_a_missing_object(monkeypatch):
+    def fake_urlopen(req):
+        raise http_error(400, b'{"statusCode":"404","error":"not_found"}')
+    monkeypatch.setattr(storage.urllib.request, "urlopen", fake_urlopen)
+    with pytest.raises(storage.NotFound):
+        storage.delete_object("users/7/a.thumb")
+
+
+def test_download_returns_bytes_and_content_type(monkeypatch):
+    calls = {}
+
+    class Resp(FakeResp):
+        headers = {"Content-Type": "image/png"}
+
+    def fake_urlopen(req):
+        calls["url"] = req.full_url
+        calls["auth"] = req.get_header("Authorization")
+        return Resp(b"png-bytes")
+
+    monkeypatch.setattr(storage.urllib.request, "urlopen", fake_urlopen)
+
+    assert storage.download("abc.png") == (b"png-bytes", "image/png")
+    assert calls["url"] == "https://proj.supabase.co/storage/v1/object/uploads/abc.png"
+    assert calls["auth"] == "Bearer svc"
+
+
+def test_upload_bytes_sends_cache_control_when_given(monkeypatch):
+    seen = {}
+
+    def fake_urlopen(req):
+        seen["cache"] = req.get_header("Cache-control")
+        return FakeResp()
+
+    monkeypatch.setattr(storage.urllib.request, "urlopen", fake_urlopen)
+    storage.upload_bytes("users/7/a.jpg", b"x", "image/jpeg", cache_control="max-age=31536000")
+    assert seen["cache"] == "max-age=31536000"
