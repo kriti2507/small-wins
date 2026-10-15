@@ -416,6 +416,32 @@ def test_sign_upload_adds_a_thumbnail_url_when_asked(no_db_client, monkeypatch):
     assert body["url"] == f"/api/images/{full}"
 
 
+@pytest.mark.parametrize("thumb", ["true", 1])
+def test_sign_upload_requires_the_literal_true_for_thumb(no_db_client, monkeypatch, thumb):
+    keys = []
+    sign_ok(monkeypatch, keys)
+
+    res = no_db_client.post("/api/uploads/sign", json={"ext": "png", "thumb": thumb})
+
+    assert res.status_code == 201
+    assert "thumb_upload_url" not in res.get_json()
+
+
+def test_sign_upload_reports_thumbnail_signing_failure_as_json_502(no_db_client, monkeypatch):
+    _set_storage_env(monkeypatch)
+
+    def fake(name, expires_in=None):
+        if name.endswith(".thumb"):
+            raise urllib.error.HTTPError("u", 500, "err", {}, BytesIO(b"down"))
+        return f"https://proj.supabase.co/storage/v1/object/upload/sign/uploads/{name}?token=t"
+    monkeypatch.setattr(app_module.storage, "signed_upload_url", fake)
+
+    res = no_db_client.post("/api/uploads/sign", json={"ext": "jpg", "thumb": True})
+
+    assert res.status_code == 502
+    assert res.get_json()["error"]
+
+
 def test_sign_upload_ignores_a_client_supplied_key(no_db_client, monkeypatch):
     keys = []
     sign_ok(monkeypatch, keys)
@@ -476,6 +502,34 @@ def test_read_image_thumb_falls_back_to_the_full_image(no_db_client, monkeypatch
 
     assert res.status_code == 302
     assert res.headers["Location"].endswith("/users/1/abc.gif?token=t")
+    assert seen == [("users/1/abc.thumb", 3600), ("users/1/abc.gif", 3600)]
+
+
+def test_read_image_thumb_404s_when_both_are_missing(no_db_client, monkeypatch):
+    seen = []
+    read_ok(monkeypatch, seen, missing={"users/1/abc.thumb", "users/1/abc.gif"})
+
+    res = no_db_client.get("/api/images/users/1/abc.gif?size=thumb")
+
+    assert res.status_code == 404
+
+
+def test_read_image_thumb_signing_failure_skips_the_full_image(no_db_client, monkeypatch):
+    _set_storage_env(monkeypatch)
+    seen = []
+
+    def fake(name, expires_in):
+        seen.append(name)
+        if name.endswith(".thumb"):
+            raise urllib.error.HTTPError("u", 500, "err", {}, BytesIO(b"down"))
+        return f"https://proj.supabase.co/storage/v1/object/sign/uploads/{name}?token=t"
+    monkeypatch.setattr(app_module.storage, "signed_read_url", fake)
+
+    res = no_db_client.get("/api/images/users/1/abc.jpg?size=thumb")
+
+    assert res.status_code == 502
+    # A non-NotFound failure must not be papered over by the fallback.
+    assert seen == ["users/1/abc.thumb"]
 
 
 @pytest.mark.parametrize("path", [
