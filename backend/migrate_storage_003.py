@@ -7,7 +7,9 @@ Run from the repo root against production, with the service key:
     .venv/bin/python backend/migrate_storage_003.py --dry-run
     .venv/bin/python backend/migrate_storage_003.py
     # later, once the bucket is private and everything checks out:
-    .venv/bin/python backend/migrate_storage_003.py --delete-old [--dry-run]
+    .venv/bin/python backend/migrate_storage_003.py --delete-old --dry-run
+    .venv/bin/python backend/migrate_storage_003.py --delete-old       # reports a count only
+    .venv/bin/python backend/migrate_storage_003.py --delete-old --yes # actually deletes
 
 Idempotent: values already under /api/images/ are skipped, and uploads
 overwrite. Old objects are only removed by --delete-old. Needs Pillow
@@ -99,16 +101,25 @@ def walk_srcs(doc, fn):
     return walk(doc)
 
 
+def distinct_name(name):
+    """A deterministic alternate for `name` - <stem>-<ext>.<ext> - used when
+    another name in this run already claimed the thumbnail key `name` would
+    use (eg. photo.jpg and photo.png both naturally become ".../photo.thumb").
+    """
+    if "." not in name:
+        return f"{name}-dup"
+    stem, ext = name.rsplit(".", 1)
+    return f"{stem}-{ext}.{ext}"
+
+
 def move(store, user_id, name, dry_run, used_thumbs):
     """Copy old object `name` to the user's prefix (+ thumbnail, unless it's
-    a GIF or another name in this run already claimed the same thumbnail
-    key); return its new app path, or None if the object is missing (the
+    a GIF). If another name in this run already claimed the thumbnail key
+    this one would use, it's renamed (distinct_name) so both thumbnails
+    exist. Returns the new app path, or None if the object is missing (the
     caller then leaves the referencing URL alone, for a later run to retry).
     """
-    new = f"users/{user_id}/{name}"
-    thumb_key = storage.thumb_name_for(new)
     data = ctype = None
-
     if not dry_run:
         try:
             data, ctype = store.download(name)
@@ -120,24 +131,35 @@ def move(store, user_id, name, dry_run, used_thumbs):
         # No download yet, so GIF-ness can only be guessed from the name.
         is_gif = name.lower().endswith(".gif")
 
-    collision = not is_gif and thumb_key in used_thumbs
-    if collision:
-        print(f"warn (thumbnail collision): {thumb_key} for {name}")
-    make_thumb_now = not is_gif and not collision
-    print(f"copy {name} -> {new}" + (f" (+ {thumb_key})" if make_thumb_now else ""))
-    if make_thumb_now:
+    target_name = name
+    new = f"users/{user_id}/{target_name}"
+    thumb_key = storage.thumb_name_for(new)
+    if not is_gif and thumb_key in used_thumbs:
+        target_name = distinct_name(name)
+        new = f"users/{user_id}/{target_name}"
+        thumb_key = storage.thumb_name_for(new)
+        print(f"warn (thumbnail collision): renaming {name} -> {target_name}")
+
+    print(f"copy {name} -> {new}" + ("" if is_gif else f" (+ {thumb_key})"))
+    if not is_gif:
         used_thumbs[thumb_key] = name
 
     if dry_run:
         return storage.image_path_for(new)
 
     store.upload(new, data, ctype, storage.IMMUTABLE_CACHE)
-    if make_thumb_now:
+    if not is_gif:
+        # Only the thumbnail *generation* is allowed to fail softly (eg.
+        # corrupt source bytes): the read route falls back to the full
+        # image when there's no .thumb. A failure uploading it (or the main
+        # object, above) propagates, so this run aborts before any DB write
+        # and a rerun retries the whole thing.
         try:
             thumb_bytes = make_thumb(data)
-            store.upload(thumb_key, thumb_bytes, "image/webp", storage.IMMUTABLE_CACHE)
         except Exception as exc:
             print(f"warn (no thumbnail): {new}: {exc}")
+        else:
+            store.upload(thumb_key, thumb_bytes, "image/webp", storage.IMMUTABLE_CACHE)
     return storage.image_path_for(new)
 
 
@@ -272,15 +294,31 @@ def check_recognised(url):
     return url
 
 
-def delete_old(conn, store, dry_run):
-    """Delete every object outside users/ that no row references."""
+def delete_old(conn, store, dry_run, confirmed=False):
+    """Delete every object outside users/ that no row references.
+
+    Without --dry-run, also requires confirmed=True (the CLI's --yes) -
+    otherwise this only reports the target and how many objects would go,
+    and deletes nothing. A sanity check before a real run touches
+    production storage.
+    """
     for r in conn.execute("select image from entries where image is not null").fetchall():
         check_recognised(r["image"])
     for r in conn.execute("select doc from posts").fetchall():
         walk_srcs(r["doc"], check_recognised)
 
     keep = referenced_old_names(conn)
-    for name in store.list_root():
+    names = store.list_root()
+
+    if not dry_run and not confirmed:
+        to_delete = [n for n in names if storage.safe_name(n) and n not in keep]
+        base = os.environ["SUPABASE_URL"].rstrip("/")
+        bucket = os.environ.get("SUPABASE_BUCKET", "uploads")
+        print(f"{len(to_delete)} object(s) at {base} bucket {bucket!r} would be deleted")
+        print("re-run with --yes to actually delete them")
+        return
+
+    for name in names:
         if not storage.safe_name(name):
             # A referenced-but-unsafe name can't be recognised as referenced
             # (its URL never matches old_name), so it must never be
@@ -299,11 +337,13 @@ def main():
     parser.add_argument("--dry-run", action="store_true", help="print the plan; change nothing")
     parser.add_argument("--delete-old", action="store_true",
                         help="delete unreferenced objects outside users/ instead of migrating")
+    parser.add_argument("--yes", action="store_true",
+                        help="actually delete with --delete-old (otherwise just report a count)")
     args = parser.parse_args()
     with psycopg.connect(os.environ["DATABASE_URL"], autocommit=True,
                          prepare_threshold=None, row_factory=dict_row) as conn:
         if args.delete_old:
-            delete_old(conn, SupabaseStore(), args.dry_run)
+            delete_old(conn, SupabaseStore(), args.dry_run, confirmed=args.yes)
         else:
             migrate(conn, SupabaseStore(), args.dry_run)
 

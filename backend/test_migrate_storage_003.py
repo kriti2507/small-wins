@@ -179,7 +179,7 @@ def test_delete_old_removes_only_unreferenced_root_objects(app_ctx):
         f"users/{uid}/moved.jpg": (b"x", "image/jpeg"),
     })
 
-    m.delete_old(db.get_conn(), store, dry_run=False)
+    m.delete_old(db.get_conn(), store, dry_run=False, confirmed=True)
 
     assert store.deleted == ["moved.jpg"]
 
@@ -189,7 +189,7 @@ def test_delete_old_skips_an_unsafe_root_object_name(app_ctx, capsys):
     URL never matches old_name), so it must never be auto-deleted either."""
     store = FakeStore({"my photo.jpg": (b"x", "image/jpeg")})
 
-    m.delete_old(db.get_conn(), store, dry_run=False)
+    m.delete_old(db.get_conn(), store, dry_run=False, confirmed=True)
 
     assert store.deleted == []
     out = capsys.readouterr().out
@@ -278,7 +278,11 @@ def test_gif_detected_by_content_type_even_when_the_extension_isnt_gif(app_ctx, 
     assert "+" not in copy_line
 
 
-def test_thumbnail_key_collision_skips_the_second_thumbnail(app_ctx, capsys):
+def test_thumbnail_key_collision_renames_the_second_object(app_ctx, capsys):
+    """photo.jpg and photo.png would both naturally become photo.thumb.
+    Whichever this run processes second must be renamed (<stem>-<ext>.<ext>)
+    instead of losing its thumbnail - and a second run must still be a
+    no-op."""
     uid = make_user("sub-a", "a@example.com")
     seed(uid, image=OLD + "photo.jpg", entry_id=1)
     seed(uid, image=OLD + "photo.png", entry_id=2)
@@ -286,10 +290,72 @@ def test_thumbnail_key_collision_skips_the_second_thumbnail(app_ctx, capsys):
 
     m.migrate(db.get_conn(), store, dry_run=False)
 
-    assert f"users/{uid}/photo.jpg" in store.objects
-    assert f"users/{uid}/photo.png" in store.objects
-    # Exactly one of the two claimed the shared thumbnail key.
-    thumb_uploads = [n for n, _c, _cc in store.uploads if n == f"users/{uid}/photo.thumb"]
-    assert len(thumb_uploads) == 1
+    img_jpg = db.find_entry(uid, "runs", 1)["image"]
+    img_png = db.find_entry(uid, "runs", 2)["image"]
+    assert img_jpg != img_png
+
+    for img, ext in [(img_jpg, "jpg"), (img_png, "png")]:
+        assert img in (
+            f"/api/images/users/{uid}/photo.{ext}",
+            f"/api/images/users/{uid}/photo-{ext}.{ext}",
+        )
+        key = img[len("/api/images/"):]
+        assert key in store.objects
+        thumb_key = storage.thumb_name_for(key)
+        assert thumb_key in store.objects, f"missing thumbnail for {key}"
+
     out = capsys.readouterr().out
-    assert f"warn (thumbnail collision): users/{uid}/photo.thumb" in out
+    assert "warn (thumbnail collision): renaming" in out
+
+    uploads_before = list(store.uploads)
+    m.migrate(db.get_conn(), store, dry_run=False)
+    assert store.uploads == uploads_before
+
+
+def test_a_failed_thumbnail_upload_propagates_and_leaves_the_url_unchanged(app_ctx):
+    """Only make_thumb (the Pillow step) fails softly. A failure uploading
+    the thumbnail itself is a real I/O problem: it must abort the run
+    before any DB write, so a rerun retries the whole thing."""
+    uid = make_user("sub-a", "a@example.com")
+    seed(uid, image=OLD + "hero.jpg")
+
+    class FailingThumbUploadStore(FakeStore):
+        def upload(self, name, data, content_type, cache_control):
+            if name.endswith(".thumb"):
+                raise RuntimeError("boom")
+            super().upload(name, data, content_type, cache_control)
+
+    store = FailingThumbUploadStore({"hero.jpg": (png(), "image/jpeg")})
+
+    with pytest.raises(RuntimeError):
+        m.migrate(db.get_conn(), store, dry_run=False)
+
+    assert db.find_entry(uid, "runs", 1)["image"] == OLD + "hero.jpg"
+
+
+def test_delete_old_without_confirmation_reports_a_count_and_deletes_nothing(app_ctx, capsys):
+    uid = make_user("sub-a", "a@example.com")
+    seed(uid, image=OLD + "still-used.jpg")  # referenced: not part of the count
+    store = FakeStore({
+        "still-used.jpg": (b"x", "image/jpeg"),
+        "moved.jpg": (b"x", "image/jpeg"),
+    })
+
+    m.delete_old(db.get_conn(), store, dry_run=False)  # confirmed defaults to False
+
+    assert store.deleted == []
+    out = capsys.readouterr().out
+    assert "1 object(s)" in out
+    assert "https://proj.supabase.co" in out
+    assert "uploads" in out
+    assert "--yes" in out
+
+
+def test_delete_old_dry_run_still_reports_the_itemised_plan_without_confirmation(app_ctx, capsys):
+    store = FakeStore({"moved.jpg": (b"x", "image/jpeg")})
+
+    m.delete_old(db.get_conn(), store, dry_run=True)  # no confirmed needed for --dry-run
+
+    assert store.deleted == []
+    out = capsys.readouterr().out
+    assert "delete moved.jpg" in out
