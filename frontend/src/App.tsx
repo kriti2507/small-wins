@@ -4,6 +4,7 @@ import RequireAuth from "./components/RequireAuth";
 import HomePage from "./pages/HomePage";
 import TopicPage from "./pages/TopicPage";
 import EntryPage from "./pages/EntryPage";
+import ConnectedAppsPage from "./pages/ConnectedAppsPage";
 import LoginPage from "./pages/LoginPage";
 
 export default function App() {
@@ -17,6 +18,7 @@ export default function App() {
             path="/topic/:slug/entry/:id"
             element={<RequireAuth><EntryPage /></RequireAuth>}
           />
+          <Route path="/apps" element={<RequireAuth><ConnectedAppsPage /></RequireAuth>} />
           <Route path="/login" element={<LoginPage />} />
         </Routes>
       </BrowserRouter>
