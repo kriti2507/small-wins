@@ -24,7 +24,7 @@ Contents:
 AI app (MCP client) ──HTTPS──▶ small-wins-live.vercel.app
                                 ├─ /mcp, /authorize, /token, /register,
                                 │  /oauth/login, /.well-known/*   → api/mcp_endpoint.py (MCP server)
-                                │        │ HTTPS + MCP_SERVICE_TOKEN
+                                │        │ HTTPS + grant credential
                                 │        ▼
                                 ├─ /api/*                          → api/index.py (Flask API)
                                 └─ everything else                 → React app
@@ -45,10 +45,14 @@ AI app (MCP client) ──HTTPS──▶ small-wins-live.vercel.app
   There's no delete tool. Apps usually ask you before running a tool that changes data.
 - **Charts** aren't a tool. The AI fetches the data and draws the chart itself.
 - **The MCP server never touches the database.** It calls your own Flask API,
-  so all the app's rules apply. It proves to Flask that it's the MCP server
-  with `MCP_SERVICE_TOKEN`, and says which user it acts for with an
-  `X-Acting-User` header (the user id from the app's token). Flask then
-  scopes every call to that user's data, as if they'd made it in the browser.
+  so all the app's rules apply. On Allow, it forwards the browser's cookie to
+  Flask `POST /api/mcp/grants`, which stores a grant (only a sha256 of its
+  secret) and returns the credential `swg_<id>.<secret>`. The credential rides
+  in the code and in the app's tokens: exchanging the code redeems the grant
+  once (a replay deletes it), refreshing checks the grant with Flask, and
+  every tool call sends `Authorization: Bearer <credential>`. Flask then
+  scopes every call to that credential's user, as if they'd made it in the
+  browser.
 - **Login uses OAuth.** Apps get a pass (token) only after you approve them on
   the Small Wins consent page. Nothing is stored: passes are signed with
   `MCP_TOKEN_SECRET`, so changing that secret cancels all of them at once.
@@ -105,16 +109,29 @@ so check the app's docs for "custom connector" or "remote MCP server":
   ```
 - **VS Code (Copilot):** "MCP: Add Server" command → HTTP → the URL.
 
+### Seeing and revoking connected apps
+
+The **Connected apps** page (`/apps`, linked from the home page header) lists
+each app you've connected: its name, where it redirects to, when it
+connected, and when it was last used. **Revoke** cuts an app off at its next
+call. A connection unused for 30 days also stops working on its own;
+reconnect it the same way.
+
 ### Reconnecting
 
 Access passes last 1 hour and renew silently for up to 30 days. You only see
 the consent page again if:
 - you haven't used the app for 30 days,
-- you rotated `MCP_TOKEN_SECRET`, or
+- you rotated `MCP_TOKEN_SECRET`,
+- you revoked it on the Connected apps page, or
 - you removed and re-added the connector.
 
 To reconnect, use the app's **Connect / Reconnect / Authenticate** button (in
 claude.ai: Settings → Connectors → Small Wins), then approve again.
+
+After upgrading to grants (Phase 3 Part B), every already-connected app needs
+to reconnect once: tokens minted before the upgrade carry no grant, so the
+app's next call gets a 401 and it re-runs sign-in.
 
 ---
 
@@ -126,7 +143,6 @@ claude.ai: Settings → Connectors → Small Wins), then approve again.
 |---|---|
 | `APP_BASE_URL` | `https://small-wins-live.vercel.app`. **Must include `https://`**, no trailing `/` |
 | `MCP_TOKEN_SECRET` | Random secret that signs app passes. Changing it logs out every app |
-| `MCP_SERVICE_TOKEN` | Random secret the MCP server uses to call the Flask API on a signed-in user's behalf. Whoever holds it can act as any user — keep it server-side (Phase 3 replaces it with per-user credentials) |
 
 Make a random secret with:
 
@@ -139,9 +155,12 @@ go to Deployments → latest → ⋯ → **Redeploy**.
 
 ### Disconnect every app (kill switch)
 
-Replace `MCP_TOKEN_SECRET` with a new random value and redeploy. Every app is
-logged out immediately; reconnect the ones you want. You can't disconnect just
-one app this way. To stop a single app, remove the connector in that app.
+To stop a single app, revoke it on the **Connected apps** page (`/apps`) —
+its next call fails right away.
+
+To disconnect every app at once, replace `MCP_TOKEN_SECRET` with a new random
+value and redeploy. Every app is logged out immediately; reconnect the ones
+you want.
 
 ### Signing everyone out
 
@@ -165,9 +184,10 @@ stay connected; rotate `MCP_TOKEN_SECRET` too if you want them to re-approve.
 | Log: `MCP server is missing env vars: ...` | A variable isn't set for this environment | Add it (Production), redeploy |
 | Consent page: "Couldn't check your sign-in" | The MCP function can't reach /api/auth/me | Check the site loads; check Vercel logs |
 | Consent page: "This login link is invalid or has expired" | Took over 10 minutes, or the secret was rotated mid-login | Start the connection again from the app |
-| App connects but every tool fails with "unavailable" | MCP server can't reach Flask, or Flask is erroring | Check `/api/topics` works; check Flask logs; check `MCP_SERVICE_TOKEN` is set |
-| Tool error "Sign in to continue." | Flask doesn't accept the service token, or the acting user no longer exists | `MCP_SERVICE_TOKEN` must be set on the project (both functions read it); redeploy. If it is, disconnect and reconnect the app |
+| App connects but every tool fails with "unavailable" | MCP server can't reach Flask, or Flask is erroring | Check `/api/topics` works; check Flask logs |
+| Tool error "This connection was revoked or has expired. Disconnect and reconnect Small Wins." | It was revoked on the Connected apps page, unused for 30 days, or you upgraded to Phase 3 Part B | Disconnect and reconnect the app |
 | Tool error "Unknown field(s) …" | The AI used a wrong field name | Normal. The AI reads the valid keys from the error and retries |
+| Consent page: "Couldn't connect the app. Try again." | Flask couldn't create the grant | Check Flask logs, and that `004_mcp_grants.sql` was run against this database |
 | Registration fails "Redirect URI not allowed" | App uses a non-loopback `http://` or browser-type address | Deliberate; see [Security model](#security-model) |
 | MCP Inspector: "Check if your MCP server is running and proxy token is correct" | Inspector opened without its session token | Open the full `http://localhost:6274/?MCP_PROXY_AUTH_TOKEN=…` link from its terminal |
 | MCP Inspector shows only 4 tools | The tool list box scrolls | Scroll inside the list |
@@ -187,8 +207,7 @@ README.
 
 ### Run it and connect the MCP Inspector
 
-You need three terminals, all started from the repo root. Put the same
-`MCP_SERVICE_TOKEN` in `backend/.env` so Flask accepts the MCP server's calls.
+You need three terminals, all started from the repo root.
 Sign in on `http://localhost:5173` first: cookies are per host, not per port,
 so the consent page on :8000 sees that session. ⚠️ Write tools act on whatever
 database `backend/.env` points to.
@@ -205,7 +224,6 @@ database `backend/.env` points to.
 export APP_BASE_URL=http://localhost:8000
 export SMALL_WINS_API_URL=http://localhost:5000
 export MCP_TOKEN_SECRET=dev-token-secret
-export MCP_SERVICE_TOKEN=dev-service-token
 .venv/bin/python -m uvicorn --app-dir api mcp_endpoint:app --port 8000
 ```
 
@@ -254,7 +272,7 @@ same approach and none of the problems we hit the first time.
 | `mcp_server/tools.py` | **Rewrite** | Your tools. Keep the pattern: pure helpers for validation, thin async tool functions |
 | `api/mcp_endpoint.py` | Copy | Vercel entry point |
 | `vercel.json` rewrites | Copy the 4 MCP lines | Put them **before** any catch-all SPA rewrite |
-| Backend change | Re-implement | Accept `Authorization: Bearer <MCP_SERVICE_TOKEN>` (compared with `hmac.compare_digest`) plus `X-Acting-User`, and act as that user — see `current_user_id` in `backend/auth.py` |
+| Backend change | Re-implement | Store a grant per connected app (a table like `mcp_grants`), accept `Authorization: Bearer <grant credential>` in your auth check, and expose create (session only) / redeem / self endpoints — see `backend/grants.py` |
 | Tests | Copy and adapt | `test_oauth.py` and `test_login.py` carry over nearly unchanged; `test_mcp_app.py` is the end-to-end template |
 
 ### Steps
@@ -263,15 +281,15 @@ same approach and none of the problems we hit the first time.
    (`3.12`) and rebuild the venv (`uv venv -p 3.12 .venv`).
 2. **Add dependencies:** `mcp==<exact version>` and `httpx`. Pin `mcp` exactly
    (see gotchas).
-3. **Backend: accept the service token for the acting user** (a few lines plus tests).
+3. **Backend: store grants and accept the grant credential** (a few lines plus tests).
 4. **Copy the reusable files**, then write your `*_client.py` and `tools.py`.
    Good tool descriptions matter: they're the only instructions the AI gets.
    Say which tool to call first, date formats, and what each field means.
 5. **Run the tests**, then run locally and connect the MCP Inspector (section 5).
 6. **Vercel:** add `api/mcp_endpoint.py`, the `functions` entry with
    `includeFiles`, and the rewrites. Set `APP_BASE_URL` (with `https://`),
-   `MCP_TOKEN_SECRET`, `MCP_SERVICE_TOKEN`, and whatever your sign-in needs
-   (e.g. OAuth client credentials). Deploy.
+   `MCP_TOKEN_SECRET`, and whatever your sign-in needs (e.g. OAuth client
+   credentials). Deploy.
 7. **Check** `/.well-known/oauth-protected-resource/mcp`, then connect a real app.
 
 ### Gotchas we hit, and their fixes
@@ -302,14 +320,15 @@ same approach and none of the problems we hit the first time.
   - the consent page showing where the code will go;
   - PKCE (required by the SDK);
   - the redirect policy: https anywhere, http only to localhost, no browser-type schemes.
-- **Accepted trade-offs** (fine for one owner):
-  - authorization codes aren't single-use (a replay still needs the PKCE secret);
-  - there's no per-app revoke (rotate the secret instead);
+- **Accepted trade-offs:**
   - the login rate limit resets on cold starts;
   - an `/authorize` request can redirect a browser to a registered https
     address with an error, which is standard OAuth behaviour when
     registration is open.
-- `MCP_SERVICE_TOKEN` never leaves the server; apps only ever see their own tokens.
+- An app's token carries its grant credential. Tokens are signed, not
+  encrypted, so an app could read it and call `/api/*` directly — but that
+  gives it nothing beyond its own access to that one user's data, and Revoke
+  cuts it off either way. Flask stores only the credential's hash.
 
 Design history: `docs/superpowers/specs/2026-09-24-mcp-server-design.md` and
 `docs/superpowers/plans/2026-09-27-mcp-server.md` (local only, not in git).
