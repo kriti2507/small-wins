@@ -7,13 +7,11 @@ class Config:
     base_url: str  # public origin of this server, no trailing slash
     api_url: str  # where the Flask API lives; the same origin on Vercel
     token_secret: str  # signs OAuth clients, codes and tokens; rotate to log everyone out
-    service_token: str  # sent to Flask as Authorization: Bearer
 
 
 REQUIRED = {
     "base_url": "APP_BASE_URL",
     "token_secret": "MCP_TOKEN_SECRET",
-    "service_token": "MCP_SERVICE_TOKEN",
 }
 
 

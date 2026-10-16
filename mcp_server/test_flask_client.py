@@ -7,21 +7,27 @@ pytestmark = pytest.mark.anyio
 
 
 def client_for(handler):
-    return FlaskClient("https://sw.example.com", "svc-token", "7", transport=httpx.MockTransport(handler))
+    return FlaskClient("https://sw.example.com", "swg_7.secret", transport=httpx.MockTransport(handler))
 
 
-async def test_sends_the_service_token_and_acting_user_and_returns_json():
+async def test_sends_the_grant_credential_and_returns_json():
     seen = {}
 
     def handler(request):
         seen["auth"] = request.headers["authorization"]
-        seen["acting"] = request.headers["x-acting-user"]
+        seen["acting"] = request.headers.get("x-acting-user")
         seen["url"] = str(request.url)
         return httpx.Response(200, json=[{"slug": "books"}])
 
     assert await client_for(handler).list_topics() == [{"slug": "books"}]
-    assert seen == {"auth": "Bearer svc-token", "acting": "7",
+    assert seen == {"auth": "Bearer swg_7.secret", "acting": None,
                     "url": "https://sw.example.com/api/topics"}
+
+
+async def test_a_revoked_connection_says_to_reconnect():
+    c = client_for(lambda r: httpx.Response(401, json={"error": "Sign in to continue."}))
+    with pytest.raises(SmallWinsError, match="revoked or has expired.*reconnect"):
+        await c.list_topics()
 
 
 async def test_writes_send_json_bodies():

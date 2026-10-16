@@ -15,16 +15,16 @@ class SmallWinsError(ToolError):
     """A failure whose message is safe and useful to show the model."""
 
 
+REVOKED = "This connection was revoked or has expired. Disconnect and reconnect Small Wins."
+
+
 class FlaskClient:
-    def __init__(self, base_url, service_token, user_id, transport=None):
-        """user_id is the Small Wins user this client acts for; Flask only
-        trusts it alongside the service token."""
+    def __init__(self, base_url, credential, transport=None):
+        """credential is the connection's grant credential; Flask maps it to
+        the user who connected the app."""
         self._http = httpx.AsyncClient(
             base_url=base_url,
-            headers={
-                "Authorization": f"Bearer {service_token}",
-                "X-Acting-User": str(user_id),
-            },
+            headers={"Authorization": f"Bearer {credential}"},
             timeout=15,
             transport=transport,
         )
@@ -39,6 +39,8 @@ class FlaskClient:
             raise SmallWinsError("Small Wins is unavailable, try again.") from None
         if resp.status_code >= 500:
             raise SmallWinsError("Small Wins is unavailable, try again.")
+        if resp.status_code == 401:
+            raise SmallWinsError(REVOKED)
         if resp.status_code >= 400:
             try:
                 message = resp.json().get("error")

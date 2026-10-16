@@ -56,26 +56,26 @@ def check_values(topic, values):
         )
 
 
-def acting_user():
-    """The Small Wins user id this call acts for: the subject of the verified
-    access token (set when the user approved the connection)."""
+def current_grant():
+    """The grant credential this call acts with: created when the user
+    approved the connection, carried in the verified access token."""
     token = get_access_token()
-    subject = token.subject if token else None
-    if not subject:
+    grant = getattr(token, "grant", None) if token else None
+    if not grant:
         raise SmallWinsError(
             "This connection isn't linked to a Small Wins account. "
             "Disconnect and reconnect Small Wins."
         )
-    return subject
+    return grant
 
 
-def register_tools(mcp, make_client, current_user=acting_user):
-    """make_client(user_id) returns a fresh FlaskClient acting as that user;
-    each tool call gets its own. current_user() names the user (tests swap
-    it out; in production it reads the request's access token)."""
+def register_tools(mcp, make_client, current_credential=current_grant):
+    """make_client(credential) returns a fresh FlaskClient acting through that
+    grant; each tool call gets its own. current_credential() names the grant
+    (tests swap it out; in production it reads the request's access token)."""
 
     async def with_client(run):
-        client = make_client(current_user())
+        client = make_client(current_credential())
         try:
             return await run(client)
         finally:
