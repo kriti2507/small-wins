@@ -74,9 +74,9 @@ def rpc(method, params=None):
     return {"jsonrpc": "2.0", "id": 1, "method": method, **({"params": params} if params else {})}
 
 
-async def connect(http):
-    """Run the whole OAuth flow the way a client would; return the registration,
-    the token response, and the code and PKCE verifier that got them."""
+async def authorize(http):
+    """Register, consent as the signed-in user, and return the registration,
+    the authorization code and its PKCE verifier (not yet exchanged)."""
     reg = (await http.post("/register", json={
         "redirect_uris": [REDIRECT], "client_name": "Claude",
         "grant_types": ["authorization_code", "refresh_token"], "response_types": ["code"],
@@ -93,11 +93,21 @@ async def connect(http):
     req = parse_qs(urlsplit(res.headers["location"]).query)["req"][0]
     res = await http.post("/oauth/login", data={"req": req}, headers=SIGNED_IN)
     assert res.status_code == 302, res.text
-    code = parse_qs(urlsplit(res.headers["location"]).query)["code"][0]
-    res = await http.post("/token", data={
+    return reg, parse_qs(urlsplit(res.headers["location"]).query)["code"][0], verifier
+
+
+async def exchange(http, reg, code, verifier):
+    return await http.post("/token", data={
         "grant_type": "authorization_code", "code": code, "redirect_uri": REDIRECT,
         "code_verifier": verifier, "client_id": reg["client_id"], "client_secret": reg["client_secret"],
     })
+
+
+async def connect(http):
+    """Run the whole OAuth flow the way a client would; return the registration,
+    the token response, and the code and PKCE verifier that got them."""
+    reg, code, verifier = await authorize(http)
+    res = await exchange(http, reg, code, verifier)
     assert res.status_code == 200, res.text
     return reg, res.json(), code, verifier
 
@@ -115,7 +125,7 @@ async def test_discovery_metadata(http):
     server = (await http.get("/.well-known/oauth-authorization-server")).json()
     assert server["registration_endpoint"] == f"{BASE}/register"
     assert server["code_challenge_methods_supported"] == ["S256"]
-    assert "revocation_endpoint" not in server  # stateless tokens can't be revoked singly
+    assert "revocation_endpoint" not in server  # apps are revoked on the Connected apps page
 
 
 async def test_full_flow_then_tool_call(http):
@@ -202,12 +212,21 @@ async def test_consent_post_without_a_session_is_refused(http):
 
 async def test_a_replayed_code_is_refused(http):
     reg, _, code, verifier = await connect(http)
-    res = await http.post("/token", data={
-        "grant_type": "authorization_code", "code": code, "redirect_uri": REDIRECT,
-        "code_verifier": verifier, "client_id": reg["client_id"], "client_secret": reg["client_secret"],
-    })
+    res = await exchange(http, reg, code, verifier)
     assert res.status_code == 400
     assert res.json()["error"] == "invalid_grant"
+
+
+async def test_a_wrong_pkce_verifier_does_not_burn_the_grant(http, flask):
+    # The SDK checks PKCE before calling exchange_authorization_code; if that
+    # order ever flipped, a bad guess would redeem (and so waste) the grant.
+    reg, code, verifier = await authorize(http)
+    res = await exchange(http, reg, code, secrets.token_urlsafe(48))
+    assert res.status_code == 400
+    assert flask.redeemed == 0
+    res = await exchange(http, reg, code, verifier)
+    assert res.status_code == 200, res.text
+    assert flask.redeemed == 1
 
 
 async def test_revoking_cuts_off_tool_calls_and_refresh(http, flask):
