@@ -6,8 +6,8 @@ DOC = {"type": "doc", "content": [
     {"type": "paragraph", "content": [{"type": "text", "text": "mine"}]}]}
 
 
-def slugs(c, headers=None):
-    res = c.get("/api/topics", headers=headers or {})
+def slugs(c):
+    res = c.get("/api/topics")
     assert res.status_code == 200
     return [t["slug"] for t in res.get_json()]
 
@@ -127,18 +127,3 @@ def test_one_user_cannot_read_another_users_image(client, second_client, monkeyp
     assert client.get(path).status_code == 302
     assert second_client.get(path).status_code == 404
     assert second_client.get(path + "?size=thumb").status_code == 404
-
-
-def test_service_token_sees_only_the_acting_users_data(db_anon_client, monkeypatch):
-    monkeypatch.setenv("MCP_SERVICE_TOKEN", "svc-token")
-    me = make_user("sub-me", "me@example.com")
-    other = make_user("sub-other", "other@example.com")
-    with app_module.app.app_context():
-        app_module.db.add_topic(other, {"slug": "books", "name": "Books", "color": "red",
-                                        "layout": "photo-top", "fields": []})
-
-    def as_user(uid):
-        return {"Authorization": "Bearer svc-token", "X-Acting-User": str(uid)}
-
-    assert slugs(db_anon_client, as_user(me)) == ["runs"]
-    assert slugs(db_anon_client, as_user(other)) == ["books"]

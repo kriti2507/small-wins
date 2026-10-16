@@ -15,6 +15,19 @@ def make_user(sub, email):
         return db.upsert_user(sub, email, None, None)["id"]
 
 
+def make_grant(user_id, redeemed=True):
+    """Create an MCP grant for user_id; return (grant_id, credential)."""
+    import app
+    import db
+    import grants
+    with app.app.app_context():
+        credential = grants.mint(user_id, "Claude", "claude.ai")
+        grant_id = int(credential.removeprefix("swg_").split(".")[0])
+        if redeemed:
+            db.redeem_grant(grant_id)
+    return grant_id, credential
+
+
 @pytest.fixture(scope="session")
 def _schema():
     if not TEST_DATABASE_URL:
@@ -57,7 +70,7 @@ def anon_client(monkeypatch):
     config can't change test results.
     """
     import app
-    for name in ("MCP_SERVICE_TOKEN", "ALLOWED_EMAILS"):
+    for name in ("ALLOWED_EMAILS",):
         monkeypatch.delenv(name, raising=False)
     app.app.config["TESTING"] = True
     return app.app.test_client()

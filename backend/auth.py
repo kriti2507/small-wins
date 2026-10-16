@@ -3,9 +3,7 @@
 Settings are read from the environment when used, not at import, so tests
 can flip them with monkeypatch.setenv.
 """
-import hmac
 import os
-import re
 from functools import wraps
 
 from authlib.integrations.base_client import OAuthError
@@ -14,6 +12,7 @@ from flask import Blueprint, g, jsonify, redirect, request, session, url_for
 from joserfc.errors import JoseError
 
 import db
+import grants
 
 DEV_SECRET = "dev-only-not-secret"
 GOOGLE_METADATA_URL = "https://accounts.google.com/.well-known/openid-configuration"
@@ -52,44 +51,16 @@ def safe_next(value):
     return value
 
 
-def has_service_token():
-    """The MCP server's bearer token. Phase 3 replaces it with a per-user
-    credential."""
-    expected = os.environ.get("MCP_SERVICE_TOKEN")
-    if not expected:
-        return False
-    scheme, _, token = request.headers.get("Authorization", "").partition(" ")
-    return scheme.lower() == "bearer" and hmac.compare_digest(token.encode(), expected.encode())
-
-
-# A positive integer that fits a Postgres bigint; anything else is refused
-# before it reaches a query.
-ACTING_USER_RE = re.compile(r"[1-9][0-9]{0,17}")
-
-
-def _acting_user():
-    """The user the MCP server says it acts for, if that user exists. Only
-    trusted alongside a valid service token."""
-    raw = request.headers.get("X-Acting-User", "")
-    if not ACTING_USER_RE.fullmatch(raw):
-        return None
-    user = db.find_user(int(raw))
-    return user["id"] if user else None
-
-
 def current_user_id():
     """Whose data this request may touch, or None.
 
-    The session cookie is signed, so its user_id is trusted as-is. The
-    service token only identifies the MCP server; X-Acting-User says which
-    user it is acting for.
+    The session cookie is signed, so its user_id is trusted as-is. A connected
+    MCP app instead sends its grant credential (see grants.py).
     """
     user_id = session.get("user_id")
     if user_id is not None:
         return user_id
-    if has_service_token():
-        return _acting_user()
-    return None
+    return grants.grant_user_id()
 
 
 def login_required(fn):
