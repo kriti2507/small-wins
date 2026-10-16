@@ -209,3 +209,96 @@ def test_upsert_user_creates_then_updates_by_google_sub(app_ctx):
 def test_find_user_unknown_is_none(app_ctx):
     import db
     assert db.find_user(999999) is None
+
+
+# --- MCP grants ----------------------------------------------------------------
+
+from datetime import timedelta  # noqa: E402
+
+
+def age(column, grant_id, by):
+    import db
+    db.get_conn().execute(f"update mcp_grants set {column} = now() - %s where id=%s", (by, grant_id))
+
+
+def test_grant_round_trip(uid):
+    import db
+    gid = db.create_grant(uid, "Claude", "claude.ai", "h" * 64)
+    grant = db.find_grant(gid)
+    assert (grant["user_id"], grant["client_name"], grant["redirect_host"], grant["secret_hash"]) == (
+        uid, "Claude", "claude.ai", "h" * 64)
+    assert grant["created_at"] is not None
+    assert grant["redeemed_at"] is None and grant["last_used_at"] is None
+    assert db.find_grant(gid + 1000) is None
+
+
+def test_redeem_grant_succeeds_only_once(uid):
+    import db
+    gid = db.create_grant(uid, None, "claude.ai", "h")
+    assert db.redeem_grant(gid) is True
+    assert db.find_grant(gid)["redeemed_at"] is not None
+    assert db.redeem_grant(gid) is False
+    assert db.redeem_grant(gid + 1000) is False
+
+
+def test_list_grants_shows_only_own_redeemed_grants_newest_first(uid, other):
+    import db
+    older = db.create_grant(uid, "Old", "claude.ai", "h")
+    newer = db.create_grant(uid, "New", "chatgpt.com", "h")
+    db.create_grant(uid, "Pending", "claude.ai", "h")  # never redeemed
+    theirs = db.create_grant(other, "Theirs", "claude.ai", "h")
+    for gid in (older, newer, theirs):
+        db.redeem_grant(gid)
+    age("created_at", older, timedelta(minutes=5))
+
+    listed = db.list_grants(uid)
+    assert [g["id"] for g in listed] == [newer, older]
+    assert set(listed[0]) == {"id", "client_name", "redirect_host", "created_at", "last_used_at"}
+
+
+def test_delete_grant_only_deletes_the_owners(uid, other):
+    import db
+    gid = db.create_grant(uid, None, "claude.ai", "h")
+    assert db.delete_grant(other, gid) is False
+    assert db.find_grant(gid) is not None
+    assert db.delete_grant(uid, gid) is True
+    assert db.find_grant(gid) is None
+    assert db.delete_grant(uid, gid) is False
+
+
+def test_touch_grant_writes_at_most_once_an_hour(uid):
+    import db
+    gid = db.create_grant(uid, None, "claude.ai", "h")
+    db.touch_grant(gid)
+    first = db.find_grant(gid)["last_used_at"]
+    assert first is not None
+    db.touch_grant(gid)
+    assert db.find_grant(gid)["last_used_at"] == first
+    age("last_used_at", gid, timedelta(hours=2))
+    old = db.find_grant(gid)["last_used_at"]
+    db.touch_grant(gid)
+    assert db.find_grant(gid)["last_used_at"] > old
+
+
+def test_create_grant_clears_abandoned_unredeemed_grants(uid, other):
+    import db
+    abandoned = db.create_grant(uid, None, "claude.ai", "h")
+    recent = db.create_grant(uid, None, "claude.ai", "h")
+    used = db.create_grant(uid, None, "claude.ai", "h")
+    db.redeem_grant(used)
+    theirs = db.create_grant(other, None, "claude.ai", "h")
+    for gid in (abandoned, used, theirs):
+        age("created_at", gid, timedelta(hours=2))
+
+    db.create_grant(uid, None, "claude.ai", "h")
+    assert db.find_grant(abandoned) is None
+    assert db.find_grant(recent) is not None
+    assert db.find_grant(used) is not None
+    assert db.find_grant(theirs) is not None  # another user's are left alone
+
+
+def test_deleting_a_user_deletes_their_grants(uid):
+    import db
+    gid = db.create_grant(uid, None, "claude.ai", "h")
+    db.get_conn().execute("delete from users where id=%s", (uid,))
+    assert db.find_grant(gid) is None
