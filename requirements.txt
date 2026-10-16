@@ -7,3 +7,4 @@ requests>=2.32
 # MCP server (mcp_server/). Pinned exactly: oauth.py relies on SDK internals.
 mcp==2.2.0
 httpx>=0.28
+cryptography>=42  # encrypts the grant inside MCP codes and tokens (mcp_server/oauth.py)

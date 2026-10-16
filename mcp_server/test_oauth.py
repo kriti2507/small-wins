@@ -275,3 +275,64 @@ async def test_tokens_and_codes_without_a_grant_are_rejected(provider, extra):
         "state": "xyz", "scopes": [SCOPE], "resource": "https://sw.example.com/mcp", **extra,
     })
     assert await provider.load_authorization_code(client, code) is None
+
+
+# --- the grant is encrypted, not just signed -----------------------------------
+
+def unsigned_payload(provider, value):
+    """What anyone holding a code or token can read without the secret."""
+    _, payload = provider._serializer.loads_unsafe(value)
+    return payload
+
+
+async def test_codes_and_tokens_dont_reveal_the_grant(provider):
+    client = await provider.get_client((await registered(provider)).client_id)
+    raw_code = await login_and_get_code(provider, client)
+    tokens = await provider.exchange_authorization_code(
+        client, await provider.load_authorization_code(client, raw_code)
+    )
+    for value in (raw_code, tokens.access_token, tokens.refresh_token):
+        payload = unsigned_payload(provider, value)
+        assert payload["grant"]
+        assert "swg_" not in repr(payload)
+        assert "swg_" not in value
+
+
+def code_with_grant(provider, client, grant):
+    return provider._dumps("code", {
+        "client_id": client.client_id, "client_name": client.client_name,
+        "redirect_uri": REDIRECT, "explicit": True, "code_challenge": "challenge",
+        "state": "xyz", "scopes": [SCOPE], "resource": "https://sw.example.com/mcp", "grant": grant,
+    })
+
+
+@pytest.mark.parametrize("grant", [CRED, "not-sealed", 7, ["x"]])
+async def test_a_signed_but_unsealed_grant_is_rejected(provider, grant):
+    client = await provider.get_client((await registered(provider)).client_id)
+    assert await provider.load_access_token(grantless("access", provider, grant=grant)) is None
+    assert await provider.load_refresh_token(
+        client, grantless("refresh", provider, client.client_id, grant=grant)
+    ) is None
+    assert await provider.load_authorization_code(client, code_with_grant(provider, client, grant)) is None
+
+
+async def test_a_grant_sealed_under_another_secret_does_not_open(provider):
+    client = await provider.get_client((await registered(provider)).client_id)
+    other = rotated_provider()
+    sealed = other._seal(CRED)
+    assert provider._open(sealed) is None
+    assert other._open(sealed) == CRED
+    assert await provider.load_access_token(grantless("access", provider, grant=sealed)) is None
+    assert await provider.load_refresh_token(
+        client, grantless("refresh", provider, client.client_id, grant=sealed)
+    ) is None
+    assert await provider.load_authorization_code(client, code_with_grant(provider, client, sealed)) is None
+
+
+async def test_rotating_the_secret_invalidates_codes_and_refresh_tokens(provider):
+    client = await provider.get_client((await registered(provider)).client_id)
+    raw_code = await login_and_get_code(provider, client)
+    tokens = await tokens_for(provider, client)
+    rotated = rotated_provider()
+    assert await rotated.load_authorization_code(client, raw_code) is None
+    assert await rotated.load_refresh_token(client, tokens.refresh_token) is None

@@ -4,15 +4,20 @@ Client ids, pending logins, authorization codes and tokens are payloads
 signed with Config.token_secret, so rotating that secret invalidates all of
 them at once. The one stored thing is the grant behind each connection: Flask
 keeps it (see grant_api.py), the code and tokens carry its credential, and
-revoking it in the app cuts the connection off. The SDK handlers do the
+revoking it in the app cuts the connection off. Signing alone would let anyone
+holding a code or token read that credential (codes pass through the browser),
+so it is encrypted inside codes and tokens with a key also derived from
+token_secret; only this server can read it. The SDK handlers do the
 protocol checks (PKCE, redirect_uri matching, expiry, client secrets); this
 class mints and reads the signed values and redeems/checks grants.
 """
+import base64
 import hashlib
 import hmac
 import secrets
 from urllib.parse import urlencode, urlsplit
 
+from cryptography.fernet import Fernet, InvalidToken
 from itsdangerous import BadData, URLSafeTimedSerializer
 from mcp.server.auth.provider import (
     AccessToken,
@@ -69,6 +74,7 @@ class SmallWinsOAuthProvider:
         """transport: an httpx transport for the calls to Flask (tests pass a fake)."""
         self.config = config
         self._serializer = URLSafeTimedSerializer(config.token_secret)
+        self._fernet = Fernet(self._grant_key(config.token_secret))
         self._transport = transport
 
     # --- signing helpers ---------------------------------------------------
@@ -87,6 +93,25 @@ class SmallWinsOAuthProvider:
     def _client_secret_for(self, client_id):
         key = self.config.token_secret.encode()
         return hmac.new(key, f"client-secret:{client_id}".encode(), hashlib.sha256).hexdigest()
+
+    @staticmethod
+    def _grant_key(token_secret):
+        digest = hmac.new(token_secret.encode(), b"grant-encryption", hashlib.sha256).digest()
+        return base64.urlsafe_b64encode(digest)
+
+    def _seal(self, credential):
+        """The grant credential, encrypted for the "grant" claim."""
+        return self._fernet.encrypt(credential.encode()).decode()
+
+    def _open(self, sealed):
+        """The credential back, or None if it wasn't sealed with this secret
+        (including a plaintext grant from before encryption)."""
+        if not isinstance(sealed, str) or not sealed:
+            return None
+        try:
+            return self._fernet.decrypt(sealed.encode()).decode()
+        except (InvalidToken, UnicodeError):
+            return None
 
     # --- clients -----------------------------------------------------------
 
@@ -137,14 +162,15 @@ class SmallWinsOAuthProvider:
     def approve(self, pending, credential):
         """URL to send the browser to once the signed-in user has allowed;
         credential is the grant Flask just created for this connection."""
-        code = self._dumps("code", {**pending, "grant": credential, "nonce": secrets.token_urlsafe(16)})
+        code = self._dumps("code", {**pending, "grant": self._seal(credential), "nonce": secrets.token_urlsafe(16)})
         return construct_redirect_uri(pending["redirect_uri"], code=code, state=pending["state"])
 
     async def load_authorization_code(self, client, authorization_code: str) -> AuthorizationCode | None:
         data, issued = self._loads("code", authorization_code, max_age=CODE_TTL)
-        if data is None or not data.get("grant"):
-            # approve() always sets a grant, so this is forged, malformed, or
-            # minted before grants existed: treat it as unknown.
+        grant = self._open(data.get("grant")) if data else None
+        if grant is None:
+            # approve() always seals a grant in, so this is forged, malformed,
+            # or minted before grants (or their encryption) existed: unknown.
             return None
         return GrantAuthorizationCode(
             code=authorization_code,
@@ -155,7 +181,7 @@ class SmallWinsOAuthProvider:
             redirect_uri=data["redirect_uri"],
             redirect_uri_provided_explicitly=data["explicit"],
             resource=data["resource"],
-            grant=data["grant"],
+            grant=grant,
         )
 
     async def exchange_authorization_code(self, client, authorization_code) -> OAuthToken:
@@ -174,7 +200,7 @@ class SmallWinsOAuthProvider:
     # --- tokens ------------------------------------------------------------
 
     def _issue(self, client_id, scopes, resource, grant):
-        claims = {"client_id": client_id, "scopes": scopes, "resource": resource, "grant": grant}
+        claims = {"client_id": client_id, "scopes": scopes, "resource": resource, "grant": self._seal(grant)}
         return OAuthToken(
             access_token=self._dumps("access", claims),
             expires_in=ACCESS_TTL,
@@ -182,33 +208,38 @@ class SmallWinsOAuthProvider:
             scope=" ".join(scopes),
         )
 
-    @staticmethod
-    def _fields(claims):
-        return {k: claims[k] for k in ("client_id", "scopes", "resource", "grant")}
+    def _fields(self, claims):
+        """Token claims with the grant opened, or None if it doesn't open."""
+        grant = self._open(claims.get("grant")) if claims else None
+        if grant is None:
+            return None
+        return {**{k: claims[k] for k in ("client_id", "scopes", "resource")}, "grant": grant}
 
     async def load_access_token(self, token: str) -> AccessToken | None:
         claims, issued = self._loads("access", token, max_age=ACCESS_TTL)
-        if claims is None or not claims.get("grant"):
-            # Minted before grants existed (those carried a "subject"), or
-            # with the grant blanked out. None makes the SDK answer 401, so
-            # the app re-runs OAuth and gets a grant.
+        fields = self._fields(claims)
+        if fields is None:
+            # Minted before grants existed (those carried a "subject") or
+            # before they were encrypted, or with the grant blanked out. None
+            # makes the SDK answer 401, so the app re-runs OAuth.
             return None
-        return GrantAccessToken(token=token, expires_at=int(issued + ACCESS_TTL), **self._fields(claims))
+        return GrantAccessToken(token=token, expires_at=int(issued + ACCESS_TTL), **fields)
 
     async def load_refresh_token(self, client, refresh_token: str) -> RefreshToken | None:
         claims, issued = self._loads("refresh", refresh_token, max_age=REFRESH_TTL)
-        if claims is None or not claims.get("grant"):
+        fields = self._fields(claims)
+        if fields is None:
             return None  # same reasoning as load_access_token
         # Don't refresh into tokens Flask will refuse: a revoked or stale
         # grant makes the app re-run OAuth instead. Fail closed if Flask
         # can't say.
         try:
-            alive = await grant_alive(self.config.api_url, claims["grant"], self._transport)
+            alive = await grant_alive(self.config.api_url, fields["grant"], self._transport)
         except GrantError:
             return None
         if not alive:
             return None
-        return GrantRefreshToken(token=refresh_token, expires_at=int(issued + REFRESH_TTL), **self._fields(claims))
+        return GrantRefreshToken(token=refresh_token, expires_at=int(issued + REFRESH_TTL), **fields)
 
     async def exchange_refresh_token(self, client, refresh_token, scopes) -> OAuthToken:
         return self._issue(client.client_id, scopes, refresh_token.resource, refresh_token.grant)

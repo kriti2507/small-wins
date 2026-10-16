@@ -137,7 +137,8 @@ def test_allow_creates_a_grant_and_redirects_back_with_it(client, provider, who)
     query = parse_qs(back.query)
     assert query["state"] == ["xyz"]
     payload, _ = provider._loads("code", query["code"][0])
-    assert payload["grant"] == CRED
+    assert "swg_" not in payload["grant"]  # encrypted, not just signed
+    assert provider._open(payload["grant"]) == CRED
     assert "subject" not in payload
 
 
