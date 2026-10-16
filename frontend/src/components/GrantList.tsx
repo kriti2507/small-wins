@@ -15,7 +15,7 @@ interface Props {
 export default function GrantList({ grants, confirming, busy, origin, onAsk, onConfirm, onCancel }: Props) {
   if (grants.length === 0) {
     return (
-      <p className="grant-empty">
+      <p className="empty">
         No apps are connected. To connect one, add a custom connector in Claude
         (or another MCP app) with the URL <code>{connectorUrl(origin)}</code>.
       </p>
@@ -49,6 +49,7 @@ export default function GrantList({ grants, confirming, busy, origin, onAsk, onC
             <button
               type="button"
               className="danger"
+              aria-label={`Revoke ${appName(g)}`}
               disabled={busy || confirming !== null}
               onClick={() => onAsk(g.id)}
             >

@@ -50,7 +50,10 @@ export default function ConnectedAppsPage() {
           origin={window.location.origin}
           onAsk={setConfirming}
           onConfirm={revoke}
-          onCancel={() => setConfirming(null)}
+          onCancel={() => {
+            setConfirming(null);
+            setError(null);
+          }}
         />
       )}
     </>

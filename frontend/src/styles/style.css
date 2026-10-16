@@ -1049,12 +1049,6 @@ a.back:hover {
   flex-basis: 100%;
 }
 
-.grant-empty {
-  color: var(--ink-muted);
-  font-family: var(--font-hand);
-  font-size: 1.2rem;
-}
-
 /* Background doodles — faint hand-drawn shapes that drift and bounce off
    the viewport edges. Two nested wrappers animate X and Y separately with
    different durations, composing into a DVD-logo-style bounce path.
