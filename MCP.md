@@ -54,8 +54,10 @@ AI app (MCP client) ──HTTPS──▶ small-wins-live.vercel.app
   scopes every call to that credential's user, as if they'd made it in the
   browser.
 - **Login uses OAuth.** Apps get a pass (token) only after you approve them on
-  the Small Wins consent page. Nothing is stored: passes are signed with
-  `MCP_TOKEN_SECRET`, so changing that secret cancels all of them at once.
+  the Small Wins consent page. The passes themselves aren't stored: they're
+  signed with `MCP_TOKEN_SECRET`, so changing that secret cancels all of them
+  at once. The one stored thing is the grant each pass carries — revocable
+  per app on the Connected apps page.
 
 ---
 
