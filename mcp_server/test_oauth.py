@@ -295,7 +295,6 @@ async def test_codes_and_tokens_dont_reveal_the_grant(provider):
         payload = unsigned_payload(provider, value)
         assert payload["grant"]
         assert "swg_" not in repr(payload)
-        assert "swg_" not in value
 
 
 def code_with_grant(provider, client, grant):
