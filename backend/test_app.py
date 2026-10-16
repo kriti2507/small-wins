@@ -695,8 +695,12 @@ def test_sign_upload_reports_storage_failure_as_json_not_html(no_db_client, monk
 
 # --- Access control -----------------------------------------------------------
 
-# Auth endpoints decide for themselves; every other route must need sign-in.
-PUBLIC_ENDPOINTS = {"auth.me", "auth.google_login", "auth.google_callback", "auth.logout"}
+# Auth endpoints decide for themselves, as do the two grant routes that take
+# a grant credential instead of a session; every other route must need sign-in.
+PUBLIC_ENDPOINTS = {
+    "auth.me", "auth.google_login", "auth.google_callback", "auth.logout",
+    "grants.redeem_grant", "grants.check_grant",
+}
 
 
 def protected_routes():
@@ -704,7 +708,7 @@ def protected_routes():
         if rule.endpoint in PUBLIC_ENDPOINTS:
             continue
         path = (rule.rule.replace("<int:entry_id>", "1").replace("<slug>", "runs")
-                .replace("<path:key>", "users/1/a.jpg"))
+                .replace("<path:key>", "users/1/a.jpg").replace("<int:grant_id>", "1"))
         assert "<" not in path, f"teach protected_routes about {rule.rule}"
         for method in sorted(rule.methods - {"HEAD", "OPTIONS"}):
             yield method, path
