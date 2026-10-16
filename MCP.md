@@ -47,12 +47,12 @@ AI app (MCP client) ──HTTPS──▶ small-wins-live.vercel.app
 - **The MCP server never touches the database.** It calls your own Flask API,
   so all the app's rules apply. On Allow, it forwards the browser's cookie to
   Flask `POST /api/mcp/grants`, which stores a grant (only a sha256 of its
-  secret) and returns the credential `swg_<id>.<secret>`. The credential rides
-  in the code and in the app's tokens: exchanging the code redeems the grant
-  once (a replay deletes it), refreshing checks the grant with Flask, and
-  every tool call sends `Authorization: Bearer <credential>`. Flask then
-  scopes every call to that credential's user, as if they'd made it in the
-  browser.
+  secret) and returns the credential `swg_<id>.<secret>`. The credential
+  rides, encrypted, in the code and in the app's tokens: exchanging the code
+  redeems the grant once (a replay deletes it), refreshing checks the grant
+  with Flask, and every tool call sends `Authorization: Bearer <credential>`.
+  Flask then scopes every call to that credential's user, as if they'd made
+  it in the browser.
 - **Login uses OAuth.** Apps get a pass (token) only after you approve them on
   the Small Wins consent page. The passes themselves aren't stored: they're
   signed with `MCP_TOKEN_SECRET`, so changing that secret cancels all of them
@@ -144,7 +144,7 @@ app's next call gets a 401 and it re-runs sign-in.
 | Name | What it is |
 |---|---|
 | `APP_BASE_URL` | `https://small-wins-live.vercel.app`. **Must include `https://`**, no trailing `/` |
-| `MCP_TOKEN_SECRET` | Random secret that signs app passes. Changing it logs out every app |
+| `MCP_TOKEN_SECRET` | Random secret that signs app passes and encrypts the grant inside them. Changing it logs out every app |
 
 Make a random secret with:
 
@@ -160,14 +160,21 @@ go to Deployments → latest → ⋯ → **Redeploy**.
 To stop a single app, revoke it on the **Connected apps** page (`/apps`) —
 its next call fails right away.
 
-To disconnect every app at once, replace `MCP_TOKEN_SECRET` with a new random
-value and redeploy. Every app is logged out immediately; reconnect the ones
-you want.
+To disconnect every app at once:
+
+1. Replace `MCP_TOKEN_SECRET` with a new random value and redeploy. Every
+   app's passes stop working immediately.
+2. In the Supabase SQL editor, run `delete from mcp_grants;` (or
+   `delete from mcp_grants where user_id = <id>;` for one person). Rotating
+   alone leaves the dead connections listed on Connected apps until each is
+   revoked.
+
+Reconnect the apps you want.
 
 ### Signing everyone out
 
 See `DEPLOYMENT.md` → "Signing everyone out". Apps that are already connected
-stay connected; rotate `MCP_TOKEN_SECRET` too if you want them to re-approve.
+stay connected; use the kill switch above too if you want them to re-approve.
 
 ### Check it's healthy
 
@@ -327,10 +334,11 @@ same approach and none of the problems we hit the first time.
   - an `/authorize` request can redirect a browser to a registered https
     address with an error, which is standard OAuth behaviour when
     registration is open.
-- An app's token carries its grant credential. Tokens are signed, not
-  encrypted, so an app could read it and call `/api/*` directly — but that
-  gives it nothing beyond its own access to that one user's data, and Revoke
-  cuts it off either way. Flask stores only the credential's hash.
+- Codes and tokens carry the grant credential encrypted (Fernet, with a key
+  derived from `MCP_TOKEN_SECRET`), so neither the app nor anyone who sees
+  the code in a browser URL can read it and call `/api/*` directly. Flask
+  stores only the credential's hash, and refuses to redeem a grant more
+  than 10 minutes old (codes last 5).
 
 Design history: `docs/superpowers/specs/2026-09-24-mcp-server-design.md` and
 `docs/superpowers/plans/2026-09-27-mcp-server.md` (local only, not in git).

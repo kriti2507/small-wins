@@ -103,7 +103,7 @@ Add to Vercel (Production and Preview):
 | Var | Value |
 |-----|-------|
 | `APP_BASE_URL` | Public origin, e.g. `https://yourdomain` (no trailing slash) |
-| `MCP_TOKEN_SECRET` | from above; signs OAuth clients and tokens |
+| `MCP_TOKEN_SECRET` | from above; signs OAuth clients and tokens, and encrypts the grant inside them |
 
 Redeploy.
 
@@ -113,10 +113,12 @@ app you just came from, sign in with Google if asked, and click **Allow** —
 this stores a grant for that connection, so it shows up on the Connected apps
 page (`/apps`) and can be revoked there.
 
-**Kill switch:** replace `MCP_TOKEN_SECRET` and redeploy. Every connected
-client is logged out. To cut off a single client instead, revoke it on the
-Connected apps page. Access tokens last 1 hour; clients refresh silently for
-up to 30 days.
+**Kill switch:** replace `MCP_TOKEN_SECRET` and redeploy, then run
+`delete from mcp_grants;` in the Supabase SQL editor. Every connected client
+is logged out, and Connected apps is cleared (rotating alone leaves the dead
+connections listed there until each is revoked). To cut off a single client
+instead, revoke it on the Connected apps page. Access tokens last 1 hour;
+clients refresh silently for up to 30 days.
 
 Local run (Flask on :5000, MCP on :8000). Sign in on `http://localhost:5173`
 first: cookies are per host, not per port, so the consent page on :8000 sees
@@ -176,7 +178,8 @@ Rollback: redeploy the previous build and re-add `MCP_SERVICE_TOKEN`; the
 ## Signing everyone out
 
 Regenerate `SECRET_KEY`, update it in Vercel, redeploy. Every browser session
-ends. To also disconnect MCP apps, rotate `MCP_TOKEN_SECRET`.
+ends. To also disconnect MCP apps, use the kill switch above (rotate
+`MCP_TOKEN_SECRET` and `delete from mcp_grants;`).
 
 ## Inviting someone
 
@@ -187,8 +190,10 @@ connected MCP apps on the Connected apps page (`/apps`) — nobody else can.
 
 - Removing someone from `ALLOWED_EMAILS` doesn't end their existing session
   (cookies last up to 30 days) or MCP connection — they keep working, still
-  scoped to only their own data. Rotate `SECRET_KEY` / `MCP_TOKEN_SECRET` to cut
-  them off immediately.
+  scoped to only their own data. To cut them off immediately, rotate
+  `SECRET_KEY` (ends every browser session) and run
+  `delete from mcp_grants where user_id = <id>;` in the Supabase SQL editor
+  (disconnects only their apps).
 
 ## Local development
 
