@@ -177,6 +177,20 @@ def test_redeeming_twice_kills_the_grant(db_anon_client):
     assert sign_bad_ext(db_anon_client, bearer(credential)).status_code == 401
 
 
+def test_an_abandoned_grant_cant_be_redeemed_late(db_anon_client):
+    me = make_user("sub-me", "me@example.com")
+    gid, credential = make_grant(me, redeemed=False)
+    age(gid, created_at=timedelta(minutes=11))
+    res = db_anon_client.post("/api/mcp/grants/redeem", headers=bearer(credential))
+    assert res.status_code == 401
+    assert res.get_json()["error"] == "Unknown grant."
+    assert grant_row(gid) is None
+
+    gid, credential = make_grant(me, redeemed=False)
+    age(gid, created_at=timedelta(minutes=4))
+    assert db_anon_client.post("/api/mcp/grants/redeem", headers=bearer(credential)).status_code == 200
+
+
 def test_redeem_needs_the_grant_credential(client):
     _, credential = make_grant(me_id(client), redeemed=False)
     assert client.post("/api/mcp/grants/redeem").status_code == 401  # a session isn't enough

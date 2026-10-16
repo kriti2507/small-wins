@@ -22,6 +22,9 @@ CREDENTIAL_RE = re.compile(r"swg_([1-9][0-9]{0,17})\.([A-Za-z0-9_-]{43})")
 # A connection unused this long stops working (refresh tokens last 30 days
 # too, so an app in regular use never hits it).
 STALE_AFTER = timedelta(days=30)
+# Codes live 5 minutes, so a grant still unredeemed after this was abandoned
+# or stolen.
+REDEEM_WINDOW = timedelta(minutes=10)
 
 MAX_NAME = 200
 MAX_HOST = 500
@@ -137,6 +140,9 @@ def redeem_grant():
     app nor whoever replayed the code can use it."""
     grant = presented_grant()
     if grant is None:
+        return jsonify({"error": "Unknown grant."}), 401
+    if datetime.now(timezone.utc) - grant["created_at"] > REDEEM_WINDOW:
+        db.delete_grant(grant["user_id"], grant["id"])
         return jsonify({"error": "Unknown grant."}), 401
     if db.redeem_grant(grant["id"]):
         return jsonify({"ok": True})
