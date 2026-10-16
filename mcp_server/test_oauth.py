@@ -2,8 +2,9 @@ import time
 from dataclasses import replace
 from urllib.parse import parse_qs, urlsplit
 
+import httpx
 import pytest
-from mcp.server.auth.provider import AuthorizationParams, RegistrationError
+from mcp.server.auth.provider import AuthorizationParams, RegistrationError, TokenError
 from mcp.shared.auth import OAuthClientInformationFull
 
 from config import Config
@@ -11,13 +12,40 @@ from oauth import SCOPE, SmallWinsOAuthProvider, redirect_uri_allowed
 
 pytestmark = pytest.mark.anyio
 
-CONFIG = Config("https://sw.example.com", "https://sw.example.com", "tok-secret", "svc")
+CONFIG = Config("https://sw.example.com", "https://sw.example.com", "tok-secret")
 REDIRECT = "https://claude.ai/api/mcp/auth_callback"
+CRED = "swg_7." + "s" * 43
+
+
+class FakeGrants:
+    """Flask's grant endpoints: redeem once, then 409; self 200 unless revoked."""
+    def __init__(self):
+        self.redeemed = 0
+        self.revoked = False
+        self.down = False
+        self.paths = []
+
+    def __call__(self, request):
+        if self.down:
+            raise httpx.ConnectError("down")
+        self.paths.append(request.url.path)
+        assert request.headers["authorization"] == f"Bearer {CRED}"
+        if request.url.path == "/api/mcp/grants/redeem":
+            self.redeemed += 1
+            return httpx.Response(200 if self.redeemed == 1 else 409, json={})
+        if request.url.path == "/api/mcp/grants/self":
+            return httpx.Response(401 if self.revoked else 200, json={"id": 7})
+        return httpx.Response(404, json={})
 
 
 @pytest.fixture
-def provider():
-    return SmallWinsOAuthProvider(CONFIG)
+def grants():
+    return FakeGrants()
+
+
+@pytest.fixture
+def provider(grants):
+    return SmallWinsOAuthProvider(CONFIG, transport=httpx.MockTransport(grants))
 
 
 def rotated_provider():
@@ -111,7 +139,7 @@ async def login_and_get_code(provider, client, state="xyz"):
     login_url = await provider.authorize(client, auth_params(state))
     assert login_url.startswith("https://sw.example.com/oauth/login?req=")
     pending = provider.load_pending(parse_qs(urlsplit(login_url).query)["req"][0])
-    back = urlsplit(provider.approve(pending, 7))
+    back = urlsplit(provider.approve(pending, CRED))
     assert f"{back.scheme}://{back.netloc}{back.path}" == REDIRECT
     query = parse_qs(back.query)
     assert query["state"] == [state]
@@ -183,64 +211,127 @@ def test_pending_requests_expire(provider, monkeypatch):
     assert provider.load_pending("garbage") is None
 
 
-async def test_the_user_rides_along_from_code_to_tokens_and_refresh(provider):
+async def tokens_for(provider, client):
+    code = await provider.load_authorization_code(client, await login_and_get_code(provider, client))
+    return await provider.exchange_authorization_code(client, code)
+
+
+async def test_the_grant_rides_along_from_code_to_tokens_and_refresh(provider, grants):
     client = await provider.get_client((await registered(provider)).client_id)
     code = await provider.load_authorization_code(client, await login_and_get_code(provider, client))
-    assert code.subject == "7"
+    assert code.grant == CRED
 
     tokens = await provider.exchange_authorization_code(client, code)
-    assert (await provider.load_access_token(tokens.access_token)).subject == "7"
+    assert grants.paths == ["/api/mcp/grants/redeem"]
+    assert (await provider.load_access_token(tokens.access_token)).grant == CRED
     refresh = await provider.load_refresh_token(client, tokens.refresh_token)
-    assert refresh.subject == "7"
+    assert refresh.grant == CRED
+    assert grants.paths[-1] == "/api/mcp/grants/self"
 
     renewed = await provider.exchange_refresh_token(client, refresh, [SCOPE])
-    assert (await provider.load_access_token(renewed.access_token)).subject == "7"
+    assert (await provider.load_access_token(renewed.access_token)).grant == CRED
 
 
-def token_claims(client_id="sdk-random-id", resource="https://sw.example.com/mcp", subject=None):
-    claims = {"client_id": client_id, "scopes": [SCOPE], "resource": resource}
-    if subject is not None:
-        claims["subject"] = subject
-    return claims
-
-
-@pytest.mark.parametrize("subject", [None, ""])
-async def test_access_token_without_a_subject_is_rejected(provider, subject):
-    # Minted before the subject claim existed, or with it blanked out: there's
-    # no user to act as, so this must not load as a usable access token.
-    token = provider._dumps("access", token_claims(subject=subject))
-    assert await provider.load_access_token(token) is None
-
-
-async def test_access_token_with_a_subject_still_loads(provider):
-    token = provider._dumps("access", token_claims(subject="7"))
-    loaded = await provider.load_access_token(token)
-    assert loaded.subject == "7"
-
-
-@pytest.mark.parametrize("subject", [None, ""])
-async def test_refresh_token_without_a_subject_is_rejected(provider, subject):
+async def test_a_replayed_code_gets_no_tokens(provider):
     client = await provider.get_client((await registered(provider)).client_id)
-    token = provider._dumps("refresh", token_claims(client_id=client.client_id, subject=subject))
-    assert await provider.load_refresh_token(client, token) is None
+    code = await provider.load_authorization_code(client, await login_and_get_code(provider, client))
+    await provider.exchange_authorization_code(client, code)
+    with pytest.raises(TokenError) as err:
+        await provider.exchange_authorization_code(client, code)
+    assert err.value.error == "invalid_grant"
 
 
-async def test_refresh_token_with_a_subject_still_loads(provider):
+async def test_no_tokens_when_flask_cant_redeem(provider, grants):
     client = await provider.get_client((await registered(provider)).client_id)
-    token = provider._dumps("refresh", token_claims(client_id=client.client_id, subject="7"))
-    loaded = await provider.load_refresh_token(client, token)
-    assert loaded.subject == "7"
+    code = await provider.load_authorization_code(client, await login_and_get_code(provider, client))
+    grants.down = True
+    with pytest.raises(TokenError):
+        await provider.exchange_authorization_code(client, code)
 
 
-@pytest.mark.parametrize("subject", [None, ""])
-async def test_authorization_code_without_a_subject_is_rejected(provider, subject):
+async def test_refresh_is_refused_for_a_dead_grant_or_when_flask_is_down(provider, grants):
     client = await provider.get_client((await registered(provider)).client_id)
-    pending = {
+    tokens = await tokens_for(provider, client)
+    grants.revoked = True
+    assert await provider.load_refresh_token(client, tokens.refresh_token) is None
+    grants.revoked, grants.down = False, True
+    assert await provider.load_refresh_token(client, tokens.refresh_token) is None
+
+
+def grantless(kind, provider, client_id="sdk-random-id", **extra):
+    """A token or code without a grant, e.g. one minted before grants existed."""
+    return provider._dumps(kind, {"client_id": client_id, "scopes": [SCOPE],
+                                  "resource": "https://sw.example.com/mcp", **extra})
+
+
+@pytest.mark.parametrize("extra", [{}, {"subject": "7"}, {"grant": ""}])
+async def test_tokens_and_codes_without_a_grant_are_rejected(provider, extra):
+    client = await provider.get_client((await registered(provider)).client_id)
+    assert await provider.load_access_token(grantless("access", provider, **extra)) is None
+    assert await provider.load_refresh_token(client, grantless("refresh", provider, client.client_id, **extra)) is None
+    code = provider._dumps("code", {
         "client_id": client.client_id, "client_name": client.client_name,
         "redirect_uri": REDIRECT, "explicit": True, "code_challenge": "challenge",
-        "state": "xyz", "scopes": [SCOPE], "resource": "https://sw.example.com/mcp",
-    }
-    if subject is not None:
-        pending["subject"] = subject
-    code = provider._dumps("code", pending)
+        "state": "xyz", "scopes": [SCOPE], "resource": "https://sw.example.com/mcp", **extra,
+    })
     assert await provider.load_authorization_code(client, code) is None
+
+
+# --- the grant is encrypted, not just signed -----------------------------------
+
+def unsigned_payload(provider, value):
+    """What anyone holding a code or token can read without the secret."""
+    _, payload = provider._serializer.loads_unsafe(value)
+    return payload
+
+
+async def test_codes_and_tokens_dont_reveal_the_grant(provider):
+    client = await provider.get_client((await registered(provider)).client_id)
+    raw_code = await login_and_get_code(provider, client)
+    tokens = await provider.exchange_authorization_code(
+        client, await provider.load_authorization_code(client, raw_code)
+    )
+    for value in (raw_code, tokens.access_token, tokens.refresh_token):
+        payload = unsigned_payload(provider, value)
+        assert payload["grant"]
+        assert "swg_" not in repr(payload)
+
+
+def code_with_grant(provider, client, grant):
+    return provider._dumps("code", {
+        "client_id": client.client_id, "client_name": client.client_name,
+        "redirect_uri": REDIRECT, "explicit": True, "code_challenge": "challenge",
+        "state": "xyz", "scopes": [SCOPE], "resource": "https://sw.example.com/mcp", "grant": grant,
+    })
+
+
+@pytest.mark.parametrize("grant", [CRED, "not-sealed", 7, ["x"]])
+async def test_a_signed_but_unsealed_grant_is_rejected(provider, grant):
+    client = await provider.get_client((await registered(provider)).client_id)
+    assert await provider.load_access_token(grantless("access", provider, grant=grant)) is None
+    assert await provider.load_refresh_token(
+        client, grantless("refresh", provider, client.client_id, grant=grant)
+    ) is None
+    assert await provider.load_authorization_code(client, code_with_grant(provider, client, grant)) is None
+
+
+async def test_a_grant_sealed_under_another_secret_does_not_open(provider):
+    client = await provider.get_client((await registered(provider)).client_id)
+    other = rotated_provider()
+    sealed = other._seal(CRED)
+    assert provider._open(sealed) is None
+    assert other._open(sealed) == CRED
+    assert await provider.load_access_token(grantless("access", provider, grant=sealed)) is None
+    assert await provider.load_refresh_token(
+        client, grantless("refresh", provider, client.client_id, grant=sealed)
+    ) is None
+    assert await provider.load_authorization_code(client, code_with_grant(provider, client, sealed)) is None
+
+
+async def test_rotating_the_secret_invalidates_codes_and_refresh_tokens(provider):
+    client = await provider.get_client((await registered(provider)).client_id)
+    raw_code = await login_and_get_code(provider, client)
+    tokens = await tokens_for(provider, client)
+    rotated = rotated_provider()
+    assert await rotated.load_authorization_code(client, raw_code) is None
+    assert await rotated.load_refresh_token(client, tokens.refresh_token) is None

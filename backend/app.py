@@ -8,6 +8,7 @@ from flask import Flask, g, jsonify, redirect, request
 
 import auth
 import db
+import grants
 import storage
 
 # Local dev reads DB/storage config from backend/.env; on Vercel these come
@@ -41,6 +42,7 @@ if os.environ.get("TRUST_PROXY"):
     app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1)
 
 auth.init_app(app)
+app.register_blueprint(grants.bp)
 
 
 @app.teardown_appcontext

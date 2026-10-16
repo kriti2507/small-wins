@@ -1,4 +1,4 @@
-import type { Topic, Entry, PostDoc } from "../types";
+import type { Topic, Entry, PostDoc, Grant } from "../types";
 import { prepareImage } from "../lib/image";
 import { loginPath } from "../lib/authPaths";
 
@@ -117,6 +117,16 @@ export function setTopicLayout(slug: string, layout: string): Promise<Topic> {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ layout }),
   }).then((r) => json<Topic>(r));
+}
+
+export function listGrants(): Promise<Grant[]> {
+  return fetch("/api/mcp/grants").then((r) => json<Grant[]>(r));
+}
+
+export function revokeGrant(id: number): Promise<void> {
+  return fetch(`/api/mcp/grants/${id}`, { method: "DELETE" })
+    .then((r) => json<null>(r))
+    .then(() => undefined);
 }
 
 // Upload keys are random and never reused, so the bytes behind one never

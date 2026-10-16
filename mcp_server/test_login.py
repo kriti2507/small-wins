@@ -8,11 +8,13 @@ from starlette.routing import Route
 from starlette.testclient import TestClient
 
 from config import Config
+from grant_api import GrantError
 from login import SignInCheckFailed, make_login_handlers, signed_in_user
 from oauth import SmallWinsOAuthProvider
 
-CONFIG = Config("https://sw.example.com", "https://sw.example.com", "tok-secret", "svc")
+CONFIG = Config("https://sw.example.com", "https://sw.example.com", "tok-secret")
 ME = {"id": 7, "email": "me@example.com", "name": "Me", "avatar_url": None}
+CRED = "swg_7." + "s" * 43
 
 
 @pytest.fixture
@@ -26,6 +28,8 @@ class Who:
         self.user = None
         self.fail = False
         self.cookies = []
+        self.grants = []
+        self.grant_fails = False
 
 
 @pytest.fixture
@@ -41,7 +45,13 @@ def client(provider, who):
             raise SignInCheckFailed()
         return who.user
 
-    show, submit = make_login_handlers(provider, check_user)
+    async def create_grant(cookie, client_name, redirect_host):
+        who.grants.append((cookie, client_name, redirect_host))
+        if who.grant_fails:
+            raise GrantError()
+        return CRED
+
+    show, submit = make_login_handlers(provider, check_user, create_grant)
     app = Starlette(routes=[Route("/oauth/login", show, methods=["GET"]), Route("/oauth/login", submit, methods=["POST"])])
     return TestClient(app, base_url="https://sw.example.com", follow_redirects=False)
 
@@ -117,16 +127,40 @@ def test_the_browser_cookie_is_what_gets_checked(client, provider, who):
     assert who.cookies == ["session=abc"]
 
 
-def test_allow_redirects_back_with_a_code_for_this_user(client, provider, who):
+def test_allow_creates_a_grant_and_redirects_back_with_it(client, provider, who):
     who.user = ME
-    res = client.post("/oauth/login", data={"req": pending_req(provider)})
+    res = client.post("/oauth/login", data={"req": pending_req(provider)}, headers={"cookie": "session=abc"})
     assert res.status_code == 302
+    assert who.grants == [("session=abc", "Claude", "claude.ai")]
     back = urlsplit(res.headers["location"])
     assert back.netloc == "claude.ai"
     query = parse_qs(back.query)
     assert query["state"] == ["xyz"]
     payload, _ = provider._loads("code", query["code"][0])
-    assert payload["subject"] == "7"
+    assert "swg_" not in payload["grant"]  # encrypted, not just signed
+    assert provider._open(payload["grant"]) == CRED
+    assert "subject" not in payload
+
+
+def test_app_schemes_are_recorded_as_the_whole_uri(client, provider, who):
+    who.user = ME
+    client.post("/oauth/login", data={"req": pending_req(provider, redirect="cursor://x/oauth/callback")})
+    assert who.grants[0][2] == "cursor://x/oauth/callback"
+
+
+def test_a_failed_grant_shows_an_error_not_a_code(client, provider, who):
+    who.user, who.grant_fails = ME, True
+    res = client.post("/oauth/login", data={"req": pending_req(provider)})
+    assert res.status_code == 502
+    assert "Couldn't connect the app. Try again." in res.text
+    assert "location" not in res.headers
+
+
+def test_no_grant_without_a_signed_in_user(client, provider, who):
+    client.post("/oauth/login", data={"req": pending_req(provider)})
+    who.fail = True
+    client.post("/oauth/login", data={"req": pending_req(provider)})
+    assert who.grants == []
 
 
 # --- Flask unreachable -----------------------------------------------------------

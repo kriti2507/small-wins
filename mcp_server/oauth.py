@@ -1,25 +1,35 @@
-"""Stateless OAuth provider for the MCP SDK.
+"""OAuth provider for the MCP SDK.
 
-Nothing is stored: every client id, pending login, authorization code and
-token is a payload signed with Config.token_secret, so rotating that secret
-invalidates all of them at once. The SDK handlers do the protocol checks
-(PKCE, redirect_uri matching, expiry, client secrets); this class only mints
-and reads the signed values.
+Client ids, pending logins, authorization codes and tokens are payloads
+signed with Config.token_secret, so rotating that secret invalidates all of
+them at once. The one stored thing is the grant behind each connection: Flask
+keeps it (see grant_api.py), the code and tokens carry its credential, and
+revoking it in the app cuts the connection off. Signing alone would let anyone
+holding a code or token read that credential (codes pass through the browser),
+so it is encrypted inside codes and tokens with a key also derived from
+token_secret; only this server can read it. The SDK handlers do the
+protocol checks (PKCE, redirect_uri matching, expiry, client secrets); this
+class mints and reads the signed values and redeems/checks grants.
 """
+import base64
 import hashlib
 import hmac
 import secrets
 from urllib.parse import urlencode, urlsplit
 
+from cryptography.fernet import Fernet, InvalidToken
 from itsdangerous import BadData, URLSafeTimedSerializer
 from mcp.server.auth.provider import (
     AccessToken,
     AuthorizationCode,
     RefreshToken,
     RegistrationError,
+    TokenError,
     construct_redirect_uri,
 )
 from mcp.shared.auth import OAuthClientInformationFull, OAuthToken
+
+from grant_api import GrantError, grant_alive, redeem_grant
 
 SCOPE = "smallwins"
 PENDING_TTL = 10 * 60
@@ -35,6 +45,18 @@ BLOCKED_SCHEMES = {
 }
 
 
+class GrantAuthorizationCode(AuthorizationCode):
+    grant: str  # the grant credential approve() put in the code
+
+
+class GrantAccessToken(AccessToken):
+    grant: str
+
+
+class GrantRefreshToken(RefreshToken):
+    grant: str
+
+
 def redirect_uri_allowed(uri):
     """https anywhere; http only back to this machine; or a desktop app's own
     scheme (e.g. cursor://). The login page shows the destination either way."""
@@ -48,9 +70,12 @@ def redirect_uri_allowed(uri):
 
 
 class SmallWinsOAuthProvider:
-    def __init__(self, config):
+    def __init__(self, config, transport=None):
+        """transport: an httpx transport for the calls to Flask (tests pass a fake)."""
         self.config = config
         self._serializer = URLSafeTimedSerializer(config.token_secret)
+        self._fernet = Fernet(self._grant_key(config.token_secret))
+        self._transport = transport
 
     # --- signing helpers ---------------------------------------------------
 
@@ -68,6 +93,25 @@ class SmallWinsOAuthProvider:
     def _client_secret_for(self, client_id):
         key = self.config.token_secret.encode()
         return hmac.new(key, f"client-secret:{client_id}".encode(), hashlib.sha256).hexdigest()
+
+    @staticmethod
+    def _grant_key(token_secret):
+        digest = hmac.new(token_secret.encode(), b"grant-encryption", hashlib.sha256).digest()
+        return base64.urlsafe_b64encode(digest)
+
+    def _seal(self, credential):
+        """The grant credential, encrypted for the "grant" claim."""
+        return self._fernet.encrypt(credential.encode()).decode()
+
+    def _open(self, sealed):
+        """The credential back, or None if it wasn't sealed with this secret
+        (including a plaintext grant from before encryption)."""
+        if not isinstance(sealed, str) or not sealed:
+            return None
+        try:
+            return self._fernet.decrypt(sealed.encode()).decode()
+        except (InvalidToken, UnicodeError):
+            return None
 
     # --- clients -----------------------------------------------------------
 
@@ -115,19 +159,20 @@ class SmallWinsOAuthProvider:
         pending, _ = self._loads("pending", req, max_age=PENDING_TTL)
         return pending
 
-    def approve(self, pending, user_id):
-        """URL to send the browser to once the signed-in user has allowed."""
-        code = self._dumps("code", {**pending, "subject": str(user_id), "nonce": secrets.token_urlsafe(16)})
+    def approve(self, pending, credential):
+        """URL to send the browser to once the signed-in user has allowed;
+        credential is the grant Flask just created for this connection."""
+        code = self._dumps("code", {**pending, "grant": self._seal(credential), "nonce": secrets.token_urlsafe(16)})
         return construct_redirect_uri(pending["redirect_uri"], code=code, state=pending["state"])
 
     async def load_authorization_code(self, client, authorization_code: str) -> AuthorizationCode | None:
         data, issued = self._loads("code", authorization_code, max_age=CODE_TTL)
-        if data is None or not data.get("subject"):
-            # No user to act as: `approve()` always sets one, so this can only
-            # be a forged or otherwise malformed code. Treat it as unknown
-            # rather than handing out a subject-less authorization code.
+        grant = self._open(data.get("grant")) if data else None
+        if grant is None:
+            # approve() always seals a grant in, so this is forged, malformed,
+            # or minted before grants (or their encryption) existed: unknown.
             return None
-        return AuthorizationCode(
+        return GrantAuthorizationCode(
             code=authorization_code,
             scopes=data["scopes"],
             expires_at=issued + CODE_TTL,
@@ -136,18 +181,26 @@ class SmallWinsOAuthProvider:
             redirect_uri=data["redirect_uri"],
             redirect_uri_provided_explicitly=data["explicit"],
             resource=data["resource"],
-            subject=data.get("subject"),
+            grant=grant,
         )
 
     async def exchange_authorization_code(self, client, authorization_code) -> OAuthToken:
+        # Redeeming makes the code single-use: Flask accepts the first
+        # exchange and deletes the grant on any replay.
+        try:
+            redeemed = await redeem_grant(self.config.api_url, authorization_code.grant, self._transport)
+        except GrantError:
+            redeemed = False  # fail closed: no tokens without a redeemed grant
+        if not redeemed:
+            raise TokenError("invalid_grant", "authorization code was already used or could not be redeemed")
         return self._issue(
-            client.client_id, authorization_code.scopes, authorization_code.resource, authorization_code.subject
+            client.client_id, authorization_code.scopes, authorization_code.resource, authorization_code.grant
         )
 
     # --- tokens ------------------------------------------------------------
 
-    def _issue(self, client_id, scopes, resource, subject):
-        claims = {"client_id": client_id, "scopes": scopes, "resource": resource, "subject": subject}
+    def _issue(self, client_id, scopes, resource, grant):
+        claims = {"client_id": client_id, "scopes": scopes, "resource": resource, "grant": self._seal(grant)}
         return OAuthToken(
             access_token=self._dumps("access", claims),
             expires_in=ACCESS_TTL,
@@ -155,28 +208,42 @@ class SmallWinsOAuthProvider:
             scope=" ".join(scopes),
         )
 
+    def _fields(self, claims):
+        """Token claims with the grant opened, or None if it doesn't open."""
+        grant = self._open(claims.get("grant")) if claims else None
+        if grant is None:
+            return None
+        return {**{k: claims[k] for k in ("client_id", "scopes", "resource")}, "grant": grant}
+
     async def load_access_token(self, token: str) -> AccessToken | None:
         claims, issued = self._loads("access", token, max_age=ACCESS_TTL)
-        if claims is None or not claims.get("subject"):
-            # A token minted before the subject claim existed (or with it
-            # blanked out) can't say who it acts for. Returning None here
-            # makes the SDK answer 401, so the client re-runs OAuth instead of
-            # silently refreshing a subject-less token forever.
+        fields = self._fields(claims)
+        if fields is None:
+            # Minted before grants existed (those carried a "subject") or
+            # before they were encrypted, or with the grant blanked out. None
+            # makes the SDK answer 401, so the app re-runs OAuth.
             return None
-        return AccessToken(token=token, expires_at=int(issued + ACCESS_TTL), **claims)
+        return GrantAccessToken(token=token, expires_at=int(issued + ACCESS_TTL), **fields)
 
     async def load_refresh_token(self, client, refresh_token: str) -> RefreshToken | None:
         claims, issued = self._loads("refresh", refresh_token, max_age=REFRESH_TTL)
-        if claims is None or not claims.get("subject"):
-            # Same reasoning as load_access_token: refusing the refresh token
-            # itself forces re-authentication instead of an endless loop of
-            # subject-less access tokens.
+        fields = self._fields(claims)
+        if fields is None:
+            return None  # same reasoning as load_access_token
+        # Don't refresh into tokens Flask will refuse: a revoked or stale
+        # grant makes the app re-run OAuth instead. Fail closed if Flask
+        # can't say.
+        try:
+            alive = await grant_alive(self.config.api_url, fields["grant"], self._transport)
+        except GrantError:
             return None
-        return RefreshToken(token=refresh_token, expires_at=int(issued + REFRESH_TTL), **claims)
+        if not alive:
+            return None
+        return GrantRefreshToken(token=refresh_token, expires_at=int(issued + REFRESH_TTL), **fields)
 
     async def exchange_refresh_token(self, client, refresh_token, scopes) -> OAuthToken:
-        return self._issue(client.client_id, scopes, refresh_token.resource, refresh_token.subject)
+        return self._issue(client.client_id, scopes, refresh_token.resource, refresh_token.grant)
 
     async def revoke_token(self, token) -> None:
-        """Unreachable: revocation isn't advertised, since stateless tokens
-        can't be revoked one at a time. Rotate MCP_TOKEN_SECRET instead."""
+        """Unreachable: revocation isn't advertised. People revoke an app on
+        the Connected apps page, which deletes its grant in Flask."""

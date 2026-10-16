@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { Link } from "react-router-dom";
 import type { DateRange } from "../types";
 import { getTopics, getEntries } from "../api/client";
 import { scoreEntries } from "../lib/scoring";
@@ -80,6 +81,7 @@ export default function HomePage() {
         {user?.avatar_url && (
           <img className="account-avatar" src={user.avatar_url} alt="" referrerPolicy="no-referrer" />
         )}
+        <Link to="/apps">Connected apps</Link>
         <button onClick={() => logout()}>Sign out</button>
       </div>
       <h1>Small Wins</h1>

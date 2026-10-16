@@ -65,3 +65,12 @@ export interface DateRange {
   start: string;
   end: string;
 }
+
+// One connected MCP app (GET /api/mcp/grants).
+export interface Grant {
+  id: number;
+  client_name: string | null; // what the app calls itself; may be missing
+  redirect_host: string; // e.g. "claude.ai", or the whole URI for app schemes
+  created_at: string; // ISO timestamp
+  last_used_at: string | null; // ISO timestamp; null until the app's first call
+}

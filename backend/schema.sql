@@ -41,6 +41,19 @@ create table posts (
     references entries(user_id, topic_slug, id) on delete cascade
 );
 
+-- One row per connected MCP app (see backend/grants.py). Only a sha256 of
+-- the app's secret is kept. Revoking the app deletes the row.
+create table mcp_grants (
+  id            bigserial primary key,
+  user_id       bigint not null references users(id) on delete cascade,
+  client_name   text,
+  redirect_host text not null,
+  secret_hash   text not null,
+  created_at    timestamptz not null default now(),
+  redeemed_at   timestamptz,
+  last_used_at  timestamptz
+);
+
 -- RLS on with no policies: Supabase's auto-generated REST API can't read or
 -- write these tables. Flask connects as the table owner, which RLS doesn't
 -- apply to, so the app is unaffected; its per-user filtering is in db.py.
@@ -48,3 +61,4 @@ alter table users   enable row level security;
 alter table topics  enable row level security;
 alter table entries enable row level security;
 alter table posts   enable row level security;
+alter table mcp_grants enable row level security;

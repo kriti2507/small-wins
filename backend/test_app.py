@@ -695,8 +695,12 @@ def test_sign_upload_reports_storage_failure_as_json_not_html(no_db_client, monk
 
 # --- Access control -----------------------------------------------------------
 
-# Auth endpoints decide for themselves; every other route must need sign-in.
-PUBLIC_ENDPOINTS = {"auth.me", "auth.google_login", "auth.google_callback", "auth.logout"}
+# Auth endpoints decide for themselves, as do the two grant routes that take
+# a grant credential instead of a session; every other route must need sign-in.
+PUBLIC_ENDPOINTS = {
+    "auth.me", "auth.google_login", "auth.google_callback", "auth.logout",
+    "grants.redeem_grant", "grants.check_grant",
+}
 
 
 def protected_routes():
@@ -704,7 +708,7 @@ def protected_routes():
         if rule.endpoint in PUBLIC_ENDPOINTS:
             continue
         path = (rule.rule.replace("<int:entry_id>", "1").replace("<slug>", "runs")
-                .replace("<path:key>", "users/1/a.jpg"))
+                .replace("<path:key>", "users/1/a.jpg").replace("<int:grant_id>", "1"))
         assert "<" not in path, f"teach protected_routes about {rule.rule}"
         for method in sorted(rule.methods - {"HEAD", "OPTIONS"}):
             yield method, path
@@ -753,12 +757,7 @@ def test_logout_signs_out(client):
     assert client.get("/api/topics").status_code == 401
 
 
-# --- MCP service token --------------------------------------------------------
-
-from conftest import make_user  # noqa: E402
-
-SVC = {"Authorization": "Bearer svc-token"}
-
+# --- login_required ----------------------------------------------------------
 
 def sign_bad_ext(c, headers=None):
     # sign_upload rejects .exe with 400 only after login_required passes, so
@@ -770,52 +769,7 @@ def test_signed_in_session_passes_the_guard(no_db_client):
     assert sign_bad_ext(no_db_client).status_code == 400
 
 
-def test_service_token_with_a_known_acting_user_passes(db_anon_client, monkeypatch):
-    monkeypatch.setenv("MCP_SERVICE_TOKEN", "svc-token")
-    uid = make_user("sub-me", "me@example.com")
-    res = sign_bad_ext(db_anon_client, {**SVC, "X-Acting-User": str(uid)})
-    assert res.status_code == 400
-
-
-@pytest.mark.parametrize("acting", [
-    None, "", "abc", "-1", "0", "1.5", " 1", "99999999", "1" * 30, "١",
-])
-def test_service_token_without_a_known_acting_user_is_refused(db_anon_client, monkeypatch, acting):
-    monkeypatch.setenv("MCP_SERVICE_TOKEN", "svc-token")
-    headers = dict(SVC)
-    if acting is not None:
-        headers["X-Acting-User"] = acting
-    res = sign_bad_ext(db_anon_client, headers)
-    assert res.status_code == 401
-    assert res.get_json()["error"] == "Sign in to continue."
-
-
-def test_acting_user_header_is_ignored_without_the_service_token(db_anon_client, monkeypatch):
-    monkeypatch.setenv("MCP_SERVICE_TOKEN", "svc-token")
-    uid = make_user("sub-me", "me@example.com")
-    for auth_header in ({}, {"Authorization": "Bearer nope"}):
-        res = sign_bad_ext(db_anon_client, {**auth_header, "X-Acting-User": str(uid)})
-        assert res.status_code == 401, auth_header
-
-
-def test_wrong_or_malformed_service_token_is_refused(anon_client, monkeypatch):
-    monkeypatch.setenv("MCP_SERVICE_TOKEN", "svc-token")
-    for headers in (
-        {},
-        {"Authorization": "Bearer nope"},
-        {"Authorization": "svc-token"},
-        {"Authorization": "Basic svc-token"},
-    ):
-        assert sign_bad_ext(anon_client, {**headers, "X-Acting-User": "1"}).status_code == 401, headers
-
-
-def test_service_token_ignored_when_unset(anon_client):
-    for token in ("", "None"):
-        headers = {"Authorization": f"Bearer {token}", "X-Acting-User": "1"}
-        assert sign_bad_ext(anon_client, headers).status_code == 401
-
-
-def test_login_required_exposes_the_acting_user_on_g(no_db_client, monkeypatch):
+def test_login_required_exposes_the_user_on_g(no_db_client, monkeypatch):
     seen = []
 
     def spy(name, expires_in=None):

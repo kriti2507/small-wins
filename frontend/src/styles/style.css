@@ -1000,11 +1000,53 @@ a.back:hover {
   border-radius: 50%;
 }
 
+.account a {
+  font-size: 0.9rem;
+  color: var(--ink-muted);
+  text-decoration: none;
+}
+
+.account a:hover {
+  color: var(--accent);
+}
+
 .login-error {
   color: var(--danger);
   font-size: 0.85rem;
   margin: 0;
   margin-top: 1rem;
+}
+
+/* Connected apps page */
+.grant-list {
+  list-style: none;
+  padding: 0;
+  margin: 1.5rem 0;
+}
+
+.grant {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.9rem 0;
+  border-bottom: 1px solid var(--border-soft);
+}
+
+.grant-info {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+
+.grant-meta {
+  font-size: 0.9rem;
+  color: var(--ink-muted);
+}
+
+.grant .confirm-row {
+  flex-basis: 100%;
 }
 
 /* Background doodles — faint hand-drawn shapes that drift and bounce off

@@ -1,8 +1,9 @@
 """The page a person sees mid-OAuth: who is asking, where they'll be sent,
 and which account is signed in. Signing in is the web app's Google login:
 both apps share an origin, so the browser's Flask session cookie arrives here
-too, and Flask says whose it is. On Allow, the browser goes back to the client
-with an authorization code."""
+too, and Flask says whose it is. On Allow, Flask creates a grant (a revocable
+record of this connection) for that user, and the browser goes back to the
+client with an authorization code carrying it."""
 import html
 from urllib.parse import urlencode, urlsplit
 
@@ -10,7 +11,10 @@ import httpx
 from starlette.requests import Request
 from starlette.responses import HTMLResponse, RedirectResponse
 
+from grant_api import GrantError
+
 CHECK_FAILED = "Couldn't check your sign-in. Try again."
+CONNECT_FAILED = "Couldn't connect the app. Try again."
 
 # Nothing on this page should ever be framed or cached.
 HEADERS = {
@@ -106,9 +110,10 @@ def invalid_request():
     )
 
 
-def make_login_handlers(provider, check_user):
+def make_login_handlers(provider, check_user, create_grant):
     """check_user(cookie_header) -> user dict, None if signed out, or raises
-    SignInCheckFailed."""
+    SignInCheckFailed. create_grant(cookie, client_name, redirect_host) ->
+    credential, or raises GrantError."""
 
     async def show(request: Request):
         req = request.query_params.get("req", "")
@@ -136,6 +141,12 @@ def make_login_handlers(provider, check_user):
             return render(pending, req, None, CHECK_FAILED, status=502)
         if user is None:
             return render(pending, req, None, "Sign in with Google first.", status=401)
-        return RedirectResponse(provider.approve(pending, user["id"]), status_code=302, headers=HEADERS)
+        try:
+            credential = await create_grant(
+                request.headers.get("cookie"), pending.get("client_name"), destination(pending["redirect_uri"])
+            )
+        except GrantError:
+            return render(pending, req, user, CONNECT_FAILED, status=502)
+        return RedirectResponse(provider.approve(pending, credential), status_code=302, headers=HEADERS)
 
     return show, submit

@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { readJson, httpErrorMessage, uploadImage } from "./client";
+import { readJson, httpErrorMessage, uploadImage, listGrants, revokeGrant } from "./client";
 
 vi.mock("../lib/image", () => ({
   prepareImage: vi.fn(),
@@ -161,5 +161,38 @@ describe("uploadImage", () => {
       thumb: null,
     });
     await expect(uploadImage(file)).rejects.toThrow(/Request failed \(500/);
+  });
+});
+
+describe("grants", () => {
+  const calls: { url: string; init?: RequestInit }[] = [];
+  let reply: Response;
+
+  beforeEach(() => {
+    calls.length = 0;
+    vi.stubGlobal("fetch", vi.fn(async (url: string, init?: RequestInit) => {
+      calls.push({ url, init });
+      return reply;
+    }));
+  });
+  afterEach(() => vi.unstubAllGlobals());
+
+  it("lists grants", async () => {
+    const grant = { id: 3, client_name: "Claude", redirect_host: "claude.ai",
+                    created_at: "2026-10-15T00:00:00+00:00", last_used_at: null };
+    reply = new Response(JSON.stringify([grant]), { status: 200 });
+    await expect(listGrants()).resolves.toEqual([grant]);
+    expect(calls[0].url).toBe("/api/mcp/grants");
+  });
+
+  it("revokes with DELETE and accepts an empty 204", async () => {
+    reply = new Response(null, { status: 204 });
+    await expect(revokeGrant(3)).resolves.toBeUndefined();
+    expect(calls[0]).toEqual({ url: "/api/mcp/grants/3", init: { method: "DELETE" } });
+  });
+
+  it("reports the API's error when revoking fails", async () => {
+    reply = new Response(JSON.stringify({ error: "Not found." }), { status: 404 });
+    await expect(revokeGrant(3)).rejects.toThrow("Not found.");
   });
 });

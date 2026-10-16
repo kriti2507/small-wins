@@ -4,6 +4,7 @@ from mcp.server.mcpserver import MCPServer
 from mcp.server.transport_security import TransportSecuritySettings
 
 from flask_client import FlaskClient
+from grant_api import create_grant
 from login import make_login_handlers, signed_in_user
 from oauth import SCOPE, SmallWinsOAuthProvider
 from tools import register_tools
@@ -15,14 +16,19 @@ INSTRUCTIONS = (
 )
 
 
-def build_server(config, make_client=None, check_user=None):
-    provider = SmallWinsOAuthProvider(config)
-    if make_client is None:
-        def make_client(user_id):
-            return FlaskClient(config.api_url, config.service_token, user_id)
-    if check_user is None:
-        async def check_user(cookie):
-            return await signed_in_user(config.api_url, cookie)
+def build_server(config, transport=None):
+    """transport: an httpx transport for every call to Flask (tests pass a
+    fake Flask; production uses the network)."""
+    provider = SmallWinsOAuthProvider(config, transport=transport)
+
+    def make_client(credential):
+        return FlaskClient(config.api_url, credential, transport=transport)
+
+    async def check_user(cookie):
+        return await signed_in_user(config.api_url, cookie, transport=transport)
+
+    async def create(cookie, client_name, redirect_host):
+        return await create_grant(config.api_url, cookie, client_name, redirect_host, transport=transport)
 
     mcp = MCPServer(
         name="Small Wins",
@@ -38,21 +44,22 @@ def build_server(config, make_client=None, check_user=None):
             ),
         ),
     )
-    show, submit = make_login_handlers(provider, check_user)
+    show, submit = make_login_handlers(provider, check_user, create)
     mcp.custom_route("/oauth/login", methods=["GET"])(show)
     mcp.custom_route("/oauth/login", methods=["POST"])(submit)
     register_tools(mcp, make_client)
     return mcp
 
 
-def create_app(config, make_client=None, check_user=None):
+def create_app(config, transport=None):
     """ASGI app that starts the SDK's session manager per request.
 
     The SDK only works once its lifespan has run, and serverless platforms
     may never send lifespan events. Stateless mode keeps nothing between
     requests, so building a fresh app per request is cheap and always safe.
+    transport is as for build_server.
     """
-    mcp = build_server(config, make_client, check_user)
+    mcp = build_server(config, transport)
     # Host/Origin pinning guards servers on localhost against DNS rebinding.
     # This one is public and every MCP request needs a bearer token, so the
     # check would only block browser-based clients and preview URLs.

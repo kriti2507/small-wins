@@ -49,7 +49,6 @@ In the Vercel project → Settings → Environment Variables, set:
 | `ALLOWED_EMAILS` | comma-separated emails allowed to sign in, e.g. `you@gmail.com` |
 | `SECRET_KEY` | from step 2 |
 | `TRUST_PROXY` | `1` |
-| `MCP_SERVICE_TOKEN` | only if using the MCP server, see below |
 
 Never commit these or expose the service key to the frontend.
 
@@ -93,11 +92,10 @@ add/edit them. Code in `mcp_server/`, served by `api/mcp_endpoint.py`. For
 connecting apps, troubleshooting, and reusing this in another project, see
 `MCP.md`.
 
-Generate two secrets:
+Generate a secret:
 
 ```sh
 .venv/bin/python -c "import secrets; print(secrets.token_hex(32))"   # MCP_TOKEN_SECRET
-.venv/bin/python -c "import secrets; print(secrets.token_hex(32))"   # MCP_SERVICE_TOKEN
 ```
 
 Add to Vercel (Production and Preview):
@@ -105,27 +103,30 @@ Add to Vercel (Production and Preview):
 | Var | Value |
 |-----|-------|
 | `APP_BASE_URL` | Public origin, e.g. `https://yourdomain` (no trailing slash) |
-| `MCP_TOKEN_SECRET` | from above; signs OAuth clients and tokens |
-| `MCP_SERVICE_TOKEN` | from above; identifies the MCP function to the API — it also needs `X-Acting-User` to say which signed-in user it's acting for |
+| `MCP_TOKEN_SECRET` | from above; signs OAuth clients and tokens, and encrypts the grant inside them |
 
 Redeploy.
 
 Connect a client with the URL `https://yourdomain/mcp`. The client opens a
 Small Wins page showing where you'll be sent afterwards. Check that it's the
-app you just came from, sign in with Google if asked, and click **Allow**.
+app you just came from, sign in with Google if asked, and click **Allow** —
+this stores a grant for that connection, so it shows up on the Connected apps
+page (`/apps`) and can be revoked there.
 
-**Kill switch:** replace `MCP_TOKEN_SECRET` and redeploy. Every connected
-client is logged out. There's no per-client revoke (tokens aren't stored).
-Access tokens last 1 hour; clients refresh silently for up to 30 days.
+**Kill switch:** replace `MCP_TOKEN_SECRET` and redeploy, then run
+`delete from mcp_grants;` in the Supabase SQL editor. Every connected client
+is logged out, and Connected apps is cleared (rotating alone leaves the dead
+connections listed there until each is revoked). To cut off a single client
+instead, revoke it on the Connected apps page. Access tokens last 1 hour;
+clients refresh silently for up to 30 days.
 
-Local run (Flask on :5000, MCP on :8000). Put the same `MCP_SERVICE_TOKEN` in
-`backend/.env` so Flask accepts the MCP server's calls. Sign in on
-`http://localhost:5173` first: cookies are per host, not per port, so the
-consent page on :8000 sees that session.
+Local run (Flask on :5000, MCP on :8000). Sign in on `http://localhost:5173`
+first: cookies are per host, not per port, so the consent page on :8000 sees
+that session.
 
 ```sh
 APP_BASE_URL=http://localhost:8000 SMALL_WINS_API_URL=http://localhost:5000 \
-MCP_TOKEN_SECRET=dev-token-secret MCP_SERVICE_TOKEN=dev-service-token \
+MCP_TOKEN_SECRET=dev-token-secret \
 .venv/bin/python -m uvicorn --app-dir api mcp_endpoint:app --port 8000
 ```
 
@@ -163,21 +164,36 @@ Steps 1–5 are reversible: flip the bucket back to public, and undo the DB
 rewrite from the dry-run log. Between steps 1 and 2, deleting an entry with
 an old URL leaves its object behind; step 6 cleans it up.
 
+## Upgrading to MCP grants (Phase 3, Part B)
+
+1. Run `backend/migrations/004_mcp_grants.sql` in the Supabase SQL editor.
+2. Deploy.
+3. Each user reconnects each app once: old tokens carry no grant, so the app
+   gets a 401 on its next call and re-runs sign-in.
+4. Remove `MCP_SERVICE_TOKEN` from Vercel and redeploy.
+
+Rollback: redeploy the previous build and re-add `MCP_SERVICE_TOKEN`; the
+`mcp_grants` table is harmless to leave.
+
 ## Signing everyone out
 
 Regenerate `SECRET_KEY`, update it in Vercel, redeploy. Every browser session
-ends. To also disconnect MCP apps, rotate `MCP_TOKEN_SECRET`.
+ends. To also disconnect MCP apps, use the kill switch above (rotate
+`MCP_TOKEN_SECRET` and `delete from mcp_grants;`).
 
 ## Inviting someone
 
 Add their Google email to `ALLOWED_EMAILS` (and, while the consent screen is in
 Testing, to its **Test users**), redeploy. Each new user starts with a default
-"Runs" topic and sees only their own data.
+"Runs" topic and sees only their own data. They see and revoke their own
+connected MCP apps on the Connected apps page (`/apps`) — nobody else can.
 
 - Removing someone from `ALLOWED_EMAILS` doesn't end their existing session
   (cookies last up to 30 days) or MCP connection — they keep working, still
-  scoped to only their own data. Rotate `SECRET_KEY` / `MCP_TOKEN_SECRET` to cut
-  them off immediately.
+  scoped to only their own data. To cut them off immediately, rotate
+  `SECRET_KEY` (ends every browser session) and run
+  `delete from mcp_grants where user_id = <id>;` in the Supabase SQL editor
+  (disconnects only their apps).
 
 ## Local development
 
@@ -210,6 +226,8 @@ against a Supabase URL.
 
 - `002_user_scoping.sql` — Phase 2, adds `user_id` to topics/entries/posts.
   Applied to production 2026-10-14. Its header has the run steps.
+- `004_mcp_grants.sql` — Phase 3 Part B, adds the `mcp_grants` table. See
+  "Upgrading to MCP grants" above.
 
 For any future migration: back up first, run it in the SQL Editor right before
 the matching deploy (old code breaks against a new schema and vice versa), and

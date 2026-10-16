@@ -220,3 +220,77 @@ def find_user(user_id):
         f"select {USER_COLUMNS} from users where id=%s", (user_id,)
     ).fetchone()
     return dict(row) if row else None
+
+
+# --- MCP grants --------------------------------------------------------------
+
+GRANT_COLUMNS = (
+    "id, user_id, client_name, redirect_host, secret_hash, "
+    "created_at, redeemed_at, last_used_at"
+)
+
+
+def create_grant(user_id, client_name, redirect_host, secret_hash):
+    """Store a not-yet-redeemed grant and return its id.
+
+    Also drops this user's grants that were never redeemed and are over an
+    hour old: their code expired long ago, so nothing can redeem them.
+    """
+    conn = get_conn()
+    conn.execute(
+        "delete from mcp_grants where user_id=%s and redeemed_at is null "
+        "and created_at < now() - interval '1 hour'",
+        (user_id,),
+    )
+    return conn.execute(
+        "insert into mcp_grants (user_id, client_name, redirect_host, secret_hash) "
+        "values (%s, %s, %s, %s) returning id",
+        (user_id, client_name, redirect_host, secret_hash),
+    ).fetchone()["id"]
+
+
+def find_grant(grant_id):
+    row = get_conn().execute(
+        f"select {GRANT_COLUMNS} from mcp_grants where id=%s", (grant_id,)
+    ).fetchone()
+    return dict(row) if row else None
+
+
+def redeem_grant(grant_id):
+    """Mark the grant redeemed. False if it already was (or is gone); one
+    statement, so two racing code exchanges can't both win."""
+    row = get_conn().execute(
+        "update mcp_grants set redeemed_at = now() "
+        "where id=%s and redeemed_at is null returning id",
+        (grant_id,),
+    ).fetchone()
+    return row is not None
+
+
+def touch_grant(grant_id):
+    """Record a use, at most once an hour, rather than a write per API call."""
+    get_conn().execute(
+        "update mcp_grants set last_used_at = now() where id=%s "
+        "and (last_used_at is null or last_used_at < now() - interval '1 hour')",
+        (grant_id,),
+    )
+
+
+def list_grants(user_id):
+    """The user's connected apps. Unredeemed grants are connections that
+    never finished, so they aren't shown."""
+    rows = get_conn().execute(
+        "select id, client_name, redirect_host, created_at, last_used_at "
+        "from mcp_grants where user_id=%s and redeemed_at is not null "
+        "order by created_at desc, id desc",
+        (user_id,),
+    ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def delete_grant(user_id, grant_id):
+    """Delete one of user_id's grants. False if there was no such grant."""
+    cur = get_conn().execute(
+        "delete from mcp_grants where id=%s and user_id=%s", (grant_id, user_id)
+    )
+    return cur.rowcount > 0
