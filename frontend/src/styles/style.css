@@ -30,7 +30,12 @@ body {
   font-family: var(--font-body);
   margin: 0 auto;
   max-width: 1100px;
-  padding: 2.5rem 2rem 4rem;
+  /* Insets are 0 in a normal browser tab; in the home-screen app they keep
+     content clear of the notch and the home indicator. */
+  padding: calc(2.5rem + env(safe-area-inset-top))
+    calc(2rem + env(safe-area-inset-right))
+    calc(4rem + env(safe-area-inset-bottom))
+    calc(2rem + env(safe-area-inset-left));
   background: var(--paper);
   color: var(--ink);
   line-height: 1.6;
