@@ -16,10 +16,11 @@ function pngSize(path: string): [number, number] {
   return [bytes.readUInt32BE(16), bytes.readUInt32BE(20)];
 }
 
-// The opening tag of every `<name ...>` element in index.html, so attribute
-// checks don't depend on attribute order.
+// The opening tag of every `<name ...>` element in index.html, flattened to one
+// line, so attribute checks don't depend on attribute order or line wrapping.
 function tags(name: string): string[] {
-  return html.match(new RegExp(`<${name}\\b[^>]*>`, "g")) ?? [];
+  const found = html.match(new RegExp(`<${name}\\b[^>]*>`, "g")) ?? [];
+  return found.map((tag) => tag.replace(/\s+/g, " "));
 }
 
 describe("index.html home-screen tags", () => {
