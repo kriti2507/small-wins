@@ -12,25 +12,50 @@ const html = readFileSync(frontend("index.html"), "utf8");
 function pngSize(path: string): [number, number] {
   const bytes = readFileSync(frontend(path));
   expect(bytes.subarray(1, 4).toString("ascii")).toBe("PNG");
+  expect(bytes.subarray(12, 16).toString("ascii")).toBe("IHDR");
   return [bytes.readUInt32BE(16), bytes.readUInt32BE(20)];
+}
+
+// The opening tag of every `<name ...>` element in index.html, so attribute
+// checks don't depend on attribute order.
+function tags(name: string): string[] {
+  return html.match(new RegExp(`<${name}\\b[^>]*>`, "g")) ?? [];
 }
 
 describe("index.html home-screen tags", () => {
   test("links the touch icon, svg favicon and manifest", () => {
-    expect(html).toMatch(/<link rel="apple-touch-icon" href="\/apple-touch-icon.png"/);
-    expect(html).toMatch(/<link rel="icon" type="image\/svg\+xml" href="\/icon.svg"/);
-    expect(html).toMatch(/<link rel="manifest" href="\/manifest.webmanifest"/);
+    expect(tags("link")).toContainEqual(
+      expect.stringMatching(/^(?=.*rel="apple-touch-icon")(?=.*href="\/apple-touch-icon\.png")/),
+    );
+    expect(tags("link")).toContainEqual(
+      expect.stringMatching(
+        /^(?=.*rel="icon")(?=.*type="image\/svg\+xml")(?=.*href="\/icon\.svg")/,
+      ),
+    );
+    expect(tags("link")).toContainEqual(
+      expect.stringMatching(/^(?=.*rel="manifest")(?=.*href="\/manifest\.webmanifest")/),
+    );
   });
 
   test("the old emoji favicon is gone", () => {
     expect(html).not.toContain("data:image/svg+xml");
   });
 
-  test("opens full-screen and can draw under the notch", () => {
-    expect(html).toContain('<meta name="apple-mobile-web-app-capable" content="yes"');
-    expect(html).toContain('<meta name="mobile-web-app-capable" content="yes"');
-    expect(html).toContain('<meta name="apple-mobile-web-app-title" content="Small Wins"');
-    expect(html).toMatch(/name="viewport" content="[^"]*viewport-fit=cover/);
+  test("opens full-screen, edge to edge (viewport-fit=cover)", () => {
+    expect(tags("meta")).toContainEqual(
+      expect.stringMatching(/^(?=.*name="apple-mobile-web-app-capable")(?=.*content="yes")/),
+    );
+    expect(tags("meta")).toContainEqual(
+      expect.stringMatching(/^(?=.*name="mobile-web-app-capable")(?=.*content="yes")/),
+    );
+    expect(tags("meta")).toContainEqual(
+      expect.stringMatching(
+        /^(?=.*name="apple-mobile-web-app-title")(?=.*content="Small Wins")/,
+      ),
+    );
+    expect(tags("meta")).toContainEqual(
+      expect.stringMatching(/^(?=.*name="viewport")(?=.*content="[^"]*viewport-fit=cover)/),
+    );
   });
 });
 
