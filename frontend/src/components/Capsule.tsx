@@ -40,19 +40,13 @@ export default function Capsule({ topicsData, range }: Props) {
   // Bucket entries by date. Each box carries what it needs to render.
   const byDay: Record<string, Box[]> = {};
   days.forEach((d) => (byDay[d] = []));
-  let total = 0;
   topicsData.forEach(({ topic, colorIndex, entries, scoreById }) => {
     const palette = rampFor(topic, colorIndex);
     entries.forEach((entry) => {
       if (!entry.date || !(entry.date in byDay)) return;
       byDay[entry.date].push({ topic, entry, palette, score: scoreById[entry.id] });
-      total += 1;
     });
   });
-
-  if (days.length === 0 || total === 0) {
-    return <p className="empty">No entries in this period.</p>;
-  }
 
   // Pad to whole weeks; days outside the selected range are muted placeholders.
   const gridStart = addDays(range.start, -weekdayIndex(range.start));
