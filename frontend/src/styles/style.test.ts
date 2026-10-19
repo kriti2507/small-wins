@@ -41,3 +41,14 @@ describe("capsule / spiral CSS decoupling", () => {
     expect(body).toMatch(/position\s*:\s*absolute/);
   });
 });
+
+// With viewport-fit=cover (index.html) the home-screen app draws edge to edge,
+// so the page has to pad itself clear of the notch and the home indicator.
+describe("home-screen safe areas", () => {
+  test("body padding includes every safe-area inset", () => {
+    const body = bodyOf("body");
+    for (const side of ["top", "right", "bottom", "left"]) {
+      expect(body).toContain(`env(safe-area-inset-${side})`);
+    }
+  });
+});
