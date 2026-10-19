@@ -1001,10 +1001,16 @@ a.back:hover {
 
 /* Account corner on the home page */
 .account {
+  position: relative;
   display: flex;
   justify-content: flex-end;
+}
+
+.account-trigger {
+  display: inline-flex;
   align-items: center;
-  gap: 10px;
+  gap: 6px;
+  padding: 3px 10px 3px 3px;
 }
 
 .account-avatar {
@@ -1013,14 +1019,67 @@ a.back:hover {
   border-radius: 50%;
 }
 
-.account a {
-  font-size: 0.9rem;
+.account-initial {
+  display: grid;
+  place-items: center;
+  background: var(--border-soft);
   color: var(--ink-muted);
-  text-decoration: none;
+  font-size: 0.85rem;
 }
 
-.account a:hover {
-  color: var(--accent);
+.account-chevron {
+  font-size: 0.75rem;
+  color: var(--ink-muted);
+  transition: transform 0.2s ease;
+}
+
+.account-trigger[aria-expanded="true"] .account-chevron {
+  transform: rotate(180deg);
+}
+
+.account-menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 10;
+  display: flex;
+  flex-direction: column;
+  min-width: 180px;
+  padding: 0.4rem;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  box-shadow: 0 6px 20px -6px rgba(var(--shadow-tint), 0.25);
+}
+
+.account-email {
+  margin: 0;
+  padding: 0.4rem 0.6rem 0.5rem;
+  font-size: 0.8rem;
+  color: var(--ink-faint);
+  border-bottom: 1px solid var(--border-soft);
+  margin-bottom: 0.3rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.account-menu a,
+.account-menu button {
+  padding: 0.5rem 0.6rem;
+  font-size: 0.9rem;
+  text-align: left;
+  color: var(--ink);
+  text-decoration: none;
+  background: none;
+  border: none;
+  border-radius: 8px;
+}
+
+.account-menu a:hover,
+.account-menu button:hover {
+  background: var(--border-soft);
+  box-shadow: none;
+  transform: none;
 }
 
 .login-error {

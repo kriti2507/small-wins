@@ -1,5 +1,4 @@
 import { useEffect, useState } from "react";
-import { Link } from "react-router-dom";
 import type { DateRange } from "../types";
 import { getTopics, getEntries } from "../api/client";
 import { scoreEntries } from "../lib/scoring";
@@ -8,7 +7,7 @@ import Capsule, { type CapsuleTopicData } from "../components/Capsule";
 import AspectGrid from "../components/AspectGrid";
 import TopicForm from "../components/TopicForm";
 import BackgroundDoodles from "../components/BackgroundDoodles";
-import { useAuth } from "../auth";
+import AccountMenu from "../components/AccountMenu";
 
 // "YYYY-MM" for the month `delta` months away from `month`.
 function shiftMonth(month: string, delta: number): string {
@@ -23,7 +22,6 @@ function monthRange(month: string): DateRange {
 }
 
 export default function HomePage() {
-  const { user, logout } = useAuth();
   const [topicsData, setTopicsData] = useState<CapsuleTopicData[]>([]);
   const [showForm, setShowForm] = useState(false);
   const thisMonth = isoDate(new Date()).slice(0, 7);
@@ -54,13 +52,7 @@ export default function HomePage() {
   return (
     <>
       <BackgroundDoodles />
-      <div className="account">
-        {user?.avatar_url && (
-          <img className="account-avatar" src={user.avatar_url} alt="" referrerPolicy="no-referrer" />
-        )}
-        <Link to="/apps">Connected apps</Link>
-        <button onClick={() => logout()}>Sign out</button>
-      </div>
+      <AccountMenu />
       <h1>Small Wins</h1>
       <p className="intro">
         A little diary for the good things. Track the small wins across the
