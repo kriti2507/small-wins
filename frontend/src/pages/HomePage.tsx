@@ -7,38 +7,27 @@ import { isoDate } from "../lib/dates";
 import Capsule, { type CapsuleTopicData } from "../components/Capsule";
 import AspectGrid from "../components/AspectGrid";
 import TopicForm from "../components/TopicForm";
-import RangeControls, { type Preset } from "../components/RangeControls";
 import BackgroundDoodles from "../components/BackgroundDoodles";
 import { useAuth } from "../auth";
 
-const PRESETS: Preset[] = [
-  { key: "7", label: "Last 7 days" },
-  { key: "30", label: "Last 30 days" },
-  { key: "month", label: "This month" },
-  { key: "custom", label: "Custom" },
-];
+// "YYYY-MM" for the month `delta` months away from `month`.
+function shiftMonth(month: string, delta: number): string {
+  const [y, m] = month.split("-").map(Number);
+  return isoDate(new Date(y, m - 1 + delta, 1)).slice(0, 7);
+}
 
-// Range for a preset, inclusive of today.
-function presetRange(preset: string): DateRange {
-  const today = new Date();
-  const end = isoDate(today);
-  if (preset === "month") {
-    const first = new Date(today.getFullYear(), today.getMonth(), 1);
-    return { start: isoDate(first), end };
-  }
-  const days = parseInt(preset, 10);
-  const start = new Date(today);
-  start.setDate(start.getDate() - (days - 1));
-  return { start: isoDate(start), end };
+// First through last day of a "YYYY-MM" month.
+function monthRange(month: string): DateRange {
+  const [y, m] = month.split("-").map(Number);
+  return { start: `${month}-01`, end: isoDate(new Date(y, m, 0)) };
 }
 
 export default function HomePage() {
   const { user, logout } = useAuth();
   const [topicsData, setTopicsData] = useState<CapsuleTopicData[]>([]);
   const [showForm, setShowForm] = useState(false);
-  const [preset, setPreset] = useState("30");
-  const [customStart, setCustomStart] = useState("");
-  const [customEnd, setCustomEnd] = useState("");
+  const thisMonth = isoDate(new Date()).slice(0, 7);
+  const [month, setMonth] = useState(thisMonth);
 
   function load() {
     getTopics().then((topics) =>
@@ -62,18 +51,6 @@ export default function HomePage() {
     load();
   }, []);
 
-  function onPreset(key: string) {
-    setPreset(key);
-    if (key === "custom" && (!customStart || !customEnd)) {
-      const r = presetRange("7");
-      setCustomStart(r.start);
-      setCustomEnd(r.end);
-    }
-  }
-
-  const range: DateRange =
-    preset === "custom" ? { start: customStart, end: customEnd } : presetRange(preset);
-
   return (
     <>
       <BackgroundDoodles />
@@ -93,18 +70,27 @@ export default function HomePage() {
       <section className="capsule">
         <div className="capsule-head">
           <h2>Time Capsule</h2>
-          <RangeControls
-            presets={PRESETS}
-            active={preset}
-            customStart={customStart}
-            customEnd={customEnd}
-            onPreset={onPreset}
-            onCustomStart={setCustomStart}
-            onCustomEnd={setCustomEnd}
-          />
+          <div className="capsule-controls">
+            <button type="button" className="preset" aria-label="Previous month" onClick={() => setMonth(shiftMonth(month, -1))}>
+              ‹
+            </button>
+            <input
+              type="month"
+              value={month}
+              onChange={(e) => e.target.value && setMonth(e.target.value)}
+            />
+            <button type="button" className="preset" aria-label="Next month" onClick={() => setMonth(shiftMonth(month, 1))}>
+              ›
+            </button>
+            {month !== thisMonth && (
+              <button type="button" className="preset" onClick={() => setMonth(thisMonth)}>
+                Today
+              </button>
+            )}
+          </div>
         </div>
         <div>
-          <Capsule topicsData={topicsData} range={range} />
+          <Capsule topicsData={topicsData} range={monthRange(month)} />
         </div>
       </section>
 

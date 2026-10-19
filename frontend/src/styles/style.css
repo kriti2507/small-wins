@@ -656,6 +656,14 @@ button.danger:hover {
   transition: border-color 0.2s ease;
 }
 
+/* Fill the label instead of using the input's intrinsic width, so fields
+   (especially iOS date inputs) shrink to fit narrow screens. */
+.form label > input,
+.form label > select {
+  width: 100%;
+  min-width: 0;
+}
+
 .form input:focus,
 .form select:focus {
   border-color: var(--ink-faint);
