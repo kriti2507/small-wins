@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Link, useNavigate, useParams } from "react-router-dom";
+import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import type { Topic, Entry } from "../types";
 import { getTopics, getEntry, updateEntry, deleteEntry } from "../api/client";
 import type { EntryUpdate } from "../api/client";
@@ -13,6 +13,9 @@ export default function EntryPage() {
   const { slug = "", id = "" } = useParams();
   const entryId = Number(id);
   const navigate = useNavigate();
+  // A tile's Edit button links here with ?edit=1 to open straight in the editor.
+  const [searchParams] = useSearchParams();
+  const startEditing = searchParams.get("edit") === "1";
   const [topic, setTopic] = useState<Topic | null>(null);
   const [entry, setEntry] = useState<Entry | null>(null);
   const [notFound, setNotFound] = useState(false);
@@ -26,7 +29,7 @@ export default function EntryPage() {
 
   useEffect(() => {
     setEntry(null);
-    setEditing(false);
+    setEditing(startEditing);
     setNotFound(false);
     getTopics().then((topics) => {
       const idx = topics.findIndex((t) => t.slug === slug);
@@ -50,6 +53,8 @@ export default function EntryPage() {
     return () => {
       document.documentElement.style.removeProperty("--topic-color");
     };
+    // startEditing is read only when the entry loads, so leaving the editor
+    // doesn't depend on clearing ?edit=1 from the URL.
   }, [slug, entryId]);
 
   function save(payload: EntryUpdate) {

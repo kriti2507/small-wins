@@ -111,12 +111,25 @@ export function deleteEntry(slug: string, id: number): Promise<{ ok: boolean }> 
   }).then((r) => json<{ ok: boolean }>(r));
 }
 
-export function setTopicLayout(slug: string, layout: string): Promise<Topic> {
+export function updateTopic(
+  slug: string,
+  changes: { name?: string; color?: string; layout?: string },
+): Promise<Topic> {
   return fetch(`/api/topics/${slug}`, {
     method: "PATCH",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ layout }),
+    body: JSON.stringify(changes),
   }).then((r) => json<Topic>(r));
+}
+
+export function setTopicLayout(slug: string, layout: string): Promise<Topic> {
+  return updateTopic(slug, { layout });
+}
+
+export function deleteTopic(slug: string): Promise<{ ok: boolean }> {
+  return fetch(`/api/topics/${slug}`, { method: "DELETE" }).then((r) =>
+    json<{ ok: boolean }>(r),
+  );
 }
 
 export function listGrants(): Promise<Grant[]> {

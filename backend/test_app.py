@@ -502,6 +502,69 @@ def test_set_topic_layout(client):
     assert res.get_json()["layout"] == "thumbnail"
 
 
+def test_edit_topic_name_and_color_keeps_the_slug(client):
+    entry_id = make_entry(client)
+    res = client.patch("/api/topics/runs", json={"name": " Jogs ", "color": "blue"})
+    assert res.status_code == 200
+    body = res.get_json()
+    assert (body["slug"], body["name"], body["color"]) == ("runs", "Jogs", "blue")
+    assert client.get(f"/api/topics/runs/entries/{entry_id}").status_code == 200
+
+
+def test_edit_topic_rejects_bad_values(client):
+    client.post("/api/topics", json={"name": "Books"})
+    assert client.patch("/api/topics/runs", json={"name": "  "}).status_code == 400
+    assert client.patch("/api/topics/runs", json={"color": "nope"}).status_code == 400
+    assert client.patch("/api/topics/runs", json={"name": "books"}).status_code == 409
+    assert client.patch("/api/topics/nope", json={"name": "X"}).status_code == 404
+    # Re-saving a topic under its own name is fine.
+    assert client.patch("/api/topics/runs", json={"name": "Runs"}).status_code == 200
+
+
+def test_delete_topic_removes_it_and_its_entries(client):
+    import db
+    client.post("/api/topics", json={"name": "Books"})
+    entry_id = make_entry(client)
+    client.patch(f"/api/topics/runs/entries/{entry_id}", json={"body": DOC})
+
+    res = client.delete("/api/topics/runs")
+
+    assert res.status_code == 200
+    assert [t["slug"] for t in client.get("/api/topics").get_json()] == ["books"]
+    assert db.load_entries(my_id(client), "runs") == []
+    assert db.load_post(my_id(client), "runs", entry_id) is None
+
+
+def test_delete_topic_refuses_the_last_one(client):
+    res = client.delete("/api/topics/runs")
+    assert res.status_code == 400
+    assert [t["slug"] for t in client.get("/api/topics").get_json()] == ["runs"]
+
+
+def test_delete_topic_unknown_404(client):
+    assert client.delete("/api/topics/nope").status_code == 404
+
+
+def test_delete_topic_deletes_its_images_but_not_shared_ones(client, monkeypatch):
+    _set_storage_env(monkeypatch)
+    deleted = []
+    monkeypatch.setattr(app_module.storage, "delete_object", lambda name: deleted.append(name))
+    uid = my_id(client)
+    client.post("/api/topics", json={"name": "Books"})
+
+    entry_id = make_entry(client)
+    client.patch(f"/api/topics/runs/entries/{entry_id}", json={"image": image_url(client, "hero.jpg")})
+    doc = {"type": "doc", "content": [
+        {"type": "figure", "attrs": {"src": image_url(client, "shared.jpg")}, "content": []},
+    ]}
+    client.patch(f"/api/topics/runs/entries/{entry_id}", json={"body": doc})
+    book = client.post("/api/topics/books/entries", json={"date": "2026-07-09"}).get_json()["id"]
+    client.patch(f"/api/topics/books/entries/{book}", json={"image": image_url(client, "shared.jpg")})
+
+    assert client.delete("/api/topics/runs").status_code == 200
+    assert set(deleted) == {f"users/{uid}/hero.jpg", f"users/{uid}/hero.thumb"}
+
+
 # --- Uploads ----------------------------------------------------------------
 
 def sign_ok(monkeypatch, seen=None):

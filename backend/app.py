@@ -197,12 +197,50 @@ def update_topic(slug):
         return jsonify({"error": "Unknown topic."}), 404
 
     data = request.get_json(force=True)
+    changes = {}
     if "layout" in data:
         if data["layout"] not in LAYOUTS:
             return jsonify({"error": "Invalid layout."}), 400
-        topic = db.set_topic_layout(g.user_id, slug, data["layout"])
+        changes["layout"] = data["layout"]
+    if "color" in data:
+        if data["color"] not in COLORS:
+            return jsonify({"error": "Invalid color."}), 400
+        changes["color"] = data["color"]
+    if "name" in data:
+        name = (data["name"] or "").strip()
+        if not slugify(name):
+            return jsonify({"error": "A topic name is required."}), 400
+        # The slug stays put on rename, so check the new name against both the
+        # other topics' slugs (what add_topic checks) and their names.
+        others = [t for t in db.load_topics(g.user_id) if t["slug"] != slug]
+        if any(slugify(name) in (t["slug"], slugify(t["name"])) for t in others):
+            return jsonify({"error": f"A topic '{name}' already exists."}), 409
+        if len(json.dumps({**topic, "name": name})) > MAX_TOPIC_BYTES:
+            return jsonify({"error": "That topic is too large."}), 400
+        changes["name"] = name
 
-    return jsonify(topic)
+    return jsonify(db.update_topic(g.user_id, slug, changes))
+
+
+@app.route("/api/topics/<slug>", methods=["DELETE"])
+@auth.login_required
+def delete_topic(slug):
+    topics = db.load_topics(g.user_id)
+    if not any(t["slug"] == slug for t in topics):
+        return jsonify({"error": "Unknown topic."}), 404
+    # An empty topic list gets re-seeded with the defaults on the next load
+    # (db._seed_if_empty), so deleting the last one wouldn't stick.
+    if len(topics) == 1:
+        return jsonify({"error": "You need at least one aspect."}), 400
+
+    # Gather the topic's images before it's gone, as delete_entry does.
+    candidates = {e["image"] for e in db.load_entries(g.user_id, slug) if e.get("image")}
+    for doc in db.topic_post_docs(g.user_id, slug):
+        candidates |= image_urls_in(doc)
+
+    db.delete_topic(g.user_id, slug)  # entries and posts cascade with it
+    delete_orphaned_images(candidates)
+    return jsonify({"ok": True})
 
 
 # --- Uploads API -----------------------------------------------------------
@@ -386,11 +424,17 @@ def delete_entry(slug, entry_id):
         candidates.add(entry["image"])
 
     db.delete_entry(g.user_id, slug, entry_id)  # posts row cascades with it
+    delete_orphaned_images(candidates)
+    return jsonify({"ok": True})
 
-    # Only now, with the row already gone, can "is this still referenced?"
-    # be answered correctly -- otherwise the entry being deleted would count
-    # as its own reference and nothing would ever be cleaned up. Skip the
-    # scan entirely when there's nothing that could possibly be freed.
+
+def delete_orphaned_images(candidates):
+    """Delete whichever of candidates the user no longer references.
+
+    Call only after the rows that held them are gone -- otherwise the row
+    being deleted would count as its own reference and nothing would ever be
+    cleaned up. Skips the scan entirely when nothing could possibly be freed.
+    """
     orphaned = candidates - referenced_image_urls(g.user_id) if candidates else set()
     for url in orphaned:
         # The row is already gone; a 500 here would be a lie regardless of
@@ -410,8 +454,6 @@ def delete_entry(slug, entry_id):
                 pass  # GIFs and older uploads have no thumbnail
         except Exception as exc:
             app.logger.warning("failed to delete storage object for %s: %s", url, exc)
-
-    return jsonify({"ok": True})
 
 
 # --- Export ----------------------------------------------------------------
