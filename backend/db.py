@@ -98,21 +98,31 @@ def add_topic(user_id, topic):
     )
 
 
-TOPIC_EDITABLE = ("name", "color", "layout")
+TOPIC_EDITABLE = ("name", "color", "layout", "fields")
 
 
-def update_topic(user_id, slug, changes):
+def update_topic(user_id, slug, changes, removed_keys=()):
     """Apply changes (a subset of TOPIC_EDITABLE) to one topic. The slug never
-    changes, so entry URLs stay stable across a rename."""
+    changes, so entry URLs stay stable across a rename. `removed_keys` are
+    fields dropped by this change; their values are erased from the topic's
+    entries in the same transaction."""
     cols = [c for c in TOPIC_EDITABLE if c in changes]
     if not cols:
         return find_topic(user_id, slug)
+    values = [Jsonb(changes[c]) if c == "fields" else changes[c] for c in cols]
     conn = get_conn()
-    row = conn.execute(
-        "update topics set " + ", ".join(f"{c}=%s" for c in cols) +
-        " where user_id=%s and slug=%s returning slug, name, color, layout, fields",
-        (*[changes[c] for c in cols], user_id, slug),
-    ).fetchone()
+    with conn.transaction():
+        row = conn.execute(
+            "update topics set " + ", ".join(f"{c}=%s" for c in cols) +
+            " where user_id=%s and slug=%s returning slug, name, color, layout, fields",
+            (*values, user_id, slug),
+        ).fetchone()
+        if row and removed_keys:
+            conn.execute(
+                'update entries set "values" = "values" - %s::text[] '
+                "where user_id=%s and topic_slug=%s",
+                (list(removed_keys), user_id, slug),
+            )
     return dict(row) if row else None
 
 

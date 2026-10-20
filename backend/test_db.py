@@ -316,3 +316,27 @@ def test_deleting_a_user_deletes_their_grants(uid):
     gid = db.create_grant(uid, None, "claude.ai", "h")
     db.get_conn().execute("delete from users where id=%s", (uid,))
     assert db.find_grant(gid) is None
+
+
+def test_update_topic_fields_strips_removed_values_from_that_topic_only(uid, other):
+    import db
+    db.load_topics(uid)
+    db.load_topics(other)
+    db.add_topic(uid, {"slug": "swims", "name": "Swims", "color": "blue",
+                       "layout": "photo-top",
+                       "fields": [{"key": "duration", "label": "Duration",
+                                   "type": "number", "direction": "higher"}]})
+    for user in (uid, other):
+        db.save_entry(user, "workout", {"id": 1, "date": "", "image": None,
+                                        "title": "A", "duration": 30})
+    db.save_entry(uid, "swims", {"id": 1, "date": "", "image": None, "duration": 5})
+
+    title_only = [{"key": "title", "label": "Title", "type": "text", "direction": "none"}]
+    updated = db.update_topic(uid, "workout", {"fields": title_only},
+                              removed_keys=["duration"])
+
+    assert updated["fields"] == title_only
+    mine = db.find_entry(uid, "workout", 1)
+    assert "duration" not in mine and mine["title"] == "A"
+    assert db.find_entry(other, "workout", 1)["duration"] == 30
+    assert db.find_entry(uid, "swims", 1)["duration"] == 5
