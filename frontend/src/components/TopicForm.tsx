@@ -1,7 +1,7 @@
 import { useState } from "react";
 import ColorPicker from "./ColorPicker";
 import ConfirmRow from "./ConfirmRow";
-import { PALETTE_ORDER } from "../lib/palette";
+import { PALETTES, PALETTE_ORDER } from "../lib/palette";
 import { addTopic, updateTopic } from "../api/client";
 import {
   countWithValue,
@@ -28,6 +28,8 @@ interface Props {
 export default function TopicForm({ topic, entries = [], onSaved, onCancel }: Props) {
   const [name, setName] = useState(topic?.name ?? "");
   const [color, setColor] = useState<string>(topic?.color ?? PALETTE_ORDER[0]);
+  // Field rows are tinted with the chosen color so each one reads as a block.
+  const ramp = PALETTES[color] ?? PALETTES[PALETTE_ORDER[0]];
   const [layout, setLayout] = useState<string>(topic?.layout ?? "photo-top");
   const [rows, setRows] = useState<FieldRow[]>(() => (topic ? rowsFromTopic(topic) : [emptyRow()]));
   // Id of the row whose removal is awaiting confirmation. Tracked by id (not
@@ -118,7 +120,10 @@ export default function TopicForm({ topic, entries = [], onSaved, onCancel }: Pr
         </select>
       </label>
 
-      <div className="field-list">
+      <div
+        className="field-list"
+        style={{ "--row-a": ramp[0], "--row-b": ramp[1] } as React.CSSProperties}
+      >
         <span className="field-list-label">Fields</span>
         {rows.map((row, i) => {
           const rowName = row.label.trim() || `field ${i + 1}`;

@@ -197,12 +197,7 @@ h3 {
   opacity: 0.7;
 }
 
-/* Today: an accent outline with the date circled. */
-.day-cell.today {
-  border: 1.5px solid var(--accent);
-  background: rgba(179, 101, 74, 0.05);
-}
-
+/* Today: just the date circled; the cell itself stays like any other day. */
 .day-cell.today .day-label {
   align-self: flex-start;
   color: var(--card);
@@ -985,6 +980,21 @@ a.back:hover {
 .field-list {
   display: grid;
   gap: 0.1rem;
+}
+
+/* In the topic form each field is a tinted block, alternating two light
+   shades of the chosen color (set inline as --row-a / --row-b), so a row that
+   wraps onto two lines still reads as one field. The first child is the
+   "Fields" label, so the first row is an even child. */
+.field-list > .field-row {
+  padding: 0.55rem 0.65rem;
+  border-radius: 10px;
+  margin-bottom: 0.4rem;
+  background: color-mix(in srgb, var(--row-a) 70%, var(--card));
+}
+
+.field-list > .field-row:nth-child(odd) {
+  background: color-mix(in srgb, var(--row-b) 55%, var(--card));
 }
 
 .field-list-label {
