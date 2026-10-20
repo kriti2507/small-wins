@@ -42,7 +42,10 @@ export default function TipBubble({ anchor, label, ...card }: Props) {
     function measure() {
       const a = anchor.current;
       const b = bubble.current;
-      if (!a || !b) return;
+      if (!a || !b) {
+        setPlace(null); // anchor or bubble gone: don't leave a stale placement
+        return;
+      }
       setPlace(
         placeBubble(
           a.getBoundingClientRect(),
@@ -54,6 +57,9 @@ export default function TipBubble({ anchor, label, ...card }: Props) {
     measure();
     const layout = new ResizeObserver(measure);
     layout.observe(document.body);
+    // Also observe the bubble itself, so its own size changes (e.g. Copy ->
+    // "Copied") re-place it.
+    if (bubble.current) layout.observe(bubble.current);
     window.addEventListener("scroll", measure, true);
     window.addEventListener("resize", measure);
     return () => {
@@ -69,7 +75,7 @@ export default function TipBubble({ anchor, label, ...card }: Props) {
     : { top: 0, left: 0, visibility: "hidden" };
 
   return createPortal(
-    <div ref={bubble} className={`tip-bubble ${place?.side ?? "below"}`} role="dialog" aria-label={label} style={style}>
+    <div ref={bubble} className={`tip-bubble ${place?.side ?? "below"}`} role="note" aria-label={label} style={style}>
       <TipCard {...card} />
     </div>,
     document.body,

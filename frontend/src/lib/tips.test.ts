@@ -3,22 +3,27 @@ import { homeTip, topicTip, placeBubble } from "./tips";
 
 describe("homeTip", () => {
   it("shows nothing until topics have loaded", () => {
-    expect(homeTip([], 0, 0)).toBeNull();
+    expect(homeTip([], 0, 0, false)).toBeNull();
   });
 
   it("starts with the starter-aspects tip", () => {
-    expect(homeTip([], 2, 0)).toBe("starter");
-    expect(homeTip([], 2, 5)).toBe("starter");
+    expect(homeTip([], 2, 0, false)).toBe("starter");
+    expect(homeTip([], 2, 5, false)).toBe("starter");
   });
 
   it("offers connecting once something is logged", () => {
-    expect(homeTip(["starter"], 2, 0)).toBeNull();
-    expect(homeTip(["starter"], 2, 1)).toBe("connect");
-    expect(homeTip(["starter", "log"], 2, 1)).toBe("connect");
+    expect(homeTip(["starter"], 2, 0, false)).toBeNull();
+    expect(homeTip(["starter"], 2, 1, false)).toBe("connect");
+    expect(homeTip(["starter", "log"], 2, 1, false)).toBe("connect");
   });
 
   it("is done once both home tips are seen", () => {
-    expect(homeTip(["starter", "connect"], 2, 3)).toBeNull();
+    expect(homeTip(["starter", "connect"], 2, 3, false)).toBeNull();
+  });
+
+  it("stays out of the way while something is busy", () => {
+    expect(homeTip([], 2, 0, true)).toBeNull();
+    expect(homeTip(["starter"], 2, 1, true)).toBeNull();
   });
 });
 

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import type { Ref } from "react";
 import { Link } from "react-router-dom";
 import type { Topic, Entry } from "../types";
@@ -24,6 +24,9 @@ interface Props {
   // ⋯ menu visible (it otherwise appears on hover) while the tip points at it.
   firstTileRef?: Ref<HTMLDivElement>;
   highlightFirst?: boolean;
+  // Lets a caller (the onboarding tip) know when a tile is being edited or
+  // confirming a delete, so it can stay out of the way.
+  onBusyChange?: (busy: boolean) => void;
 }
 
 // Grid of per-topic summary boxes plus an "+ Add more" tile. Each box's ⋯
@@ -34,10 +37,17 @@ export default function AspectGrid({
   onChanged,
   firstTileRef,
   highlightFirst,
+  onBusyChange,
 }: Props) {
   const [editing, setEditing] = useState<string | null>(null);
   const [confirming, setConfirming] = useState<string | null>(null);
   const [deleting, setDeleting] = useState(false);
+
+  // Report busy-ness (editing a tile or confirming its delete) so the
+  // onboarding tip can hide itself while one of these is open.
+  useEffect(() => {
+    onBusyChange?.(editing !== null || confirming !== null);
+  }, [editing, confirming, onBusyChange]);
 
   function remove(slug: string) {
     setDeleting(true);

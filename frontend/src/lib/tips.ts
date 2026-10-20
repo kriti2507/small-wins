@@ -4,8 +4,11 @@ export type TipId = "starter" | "log" | "connect";
 export const ALL_TIPS: TipId[] = ["starter", "log", "connect"];
 
 /** Which tip the home page shows, if any: the starter aspects first, then —
- * once something has been logged — connecting an MCP app. */
-export function homeTip(seen: string[], topicCount: number, entryCount: number): TipId | null {
+ * once something has been logged — connecting an MCP app. Hidden while
+ * `busy` (a form is open, a tile is being edited, or the account menu is
+ * open) so it never points at something that's no longer there. */
+export function homeTip(seen: string[], topicCount: number, entryCount: number, busy: boolean): TipId | null {
+  if (busy) return null;
   if (topicCount === 0) return null; // not loaded yet
   if (!seen.includes("starter")) return "starter";
   if (!seen.includes("connect") && entryCount > 0) return "connect";

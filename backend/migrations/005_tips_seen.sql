@@ -12,6 +12,7 @@ begin
   if not exists (
     select 1 from information_schema.columns
     where table_name = 'users' and column_name = 'tips_seen'
+      and table_schema = current_schema()
   ) then
     alter table users add column tips_seen text[] not null default '{}';
     update users set tips_seen = array['starter', 'log', 'connect'];

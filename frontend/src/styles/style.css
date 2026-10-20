@@ -571,7 +571,7 @@ h3 {
   line-height: 1.4;
   white-space: nowrap;
   pointer-events: none;
-  z-index: 1000;
+  z-index: 1001;
   box-shadow: 0 6px 18px rgba(var(--shadow-tint), 0.22);
 }
 

@@ -35,8 +35,13 @@ export default function HomePage() {
   const { user, markTipsSeen } = useAuth();
   const firstTileRef = useRef<HTMLDivElement>(null);
   const avatarRef = useRef<HTMLButtonElement>(null);
+  const [gridBusy, setGridBusy] = useState(false);
+  const [menuOpen, setMenuOpen] = useState(false);
   const entryCount = topicsData.reduce((n, d) => n + d.entries.length, 0);
-  const tip = user ? homeTip(user.tips_seen, topicsData.length, entryCount) : null;
+  // Hide the home tips while the add-topic form is open, a tile is being
+  // edited/confirming delete, or the account menu is open.
+  const busy = showForm || gridBusy || menuOpen;
+  const tip = user ? homeTip(user.tips_seen, topicsData.length, entryCount, busy) : null;
   const skipAll = () => markTipsSeen(ALL_TIPS);
 
   function load() {
@@ -64,7 +69,7 @@ export default function HomePage() {
   return (
     <>
       <BackgroundDoodles />
-      <AccountMenu triggerRef={avatarRef} />
+      <AccountMenu triggerRef={avatarRef} onOpenChange={setMenuOpen} />
       <h1>Small Wins</h1>
       <p className="intro">
         A little diary for the good things. Track the small wins across the
@@ -100,6 +105,7 @@ export default function HomePage() {
         onChanged={load}
         firstTileRef={firstTileRef}
         highlightFirst={tip === "starter"}
+        onBusyChange={setGridBusy}
       />
 
       {showForm && (
@@ -120,7 +126,7 @@ export default function HomePage() {
           onSkipAll={skipAll}
         >
           <p>
-            We've started you with Workout and Journal. Use ⋯ to rename or delete them,
+            We've started you with a couple of aspects. Use ⋯ to rename or delete them,
             or <strong>+ Add more</strong> to track something of your own.
           </p>
         </TipBubble>
@@ -138,7 +144,9 @@ export default function HomePage() {
           </p>
           <ConnectorUrl origin={window.location.origin} />
           <p>
-            It's always under <Link to="/apps">Connected apps</Link> in your account menu.
+            It's always under{" "}
+            <Link to="/apps" onClick={() => markTipsSeen(["connect"])}>Connected apps</Link>{" "}
+            in your account menu.
           </p>
         </TipBubble>
       )}
