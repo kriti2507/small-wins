@@ -859,3 +859,19 @@ def test_login_required_exposes_the_user_on_g(no_db_client, monkeypatch):
     monkeypatch.setattr(app_module.storage, "count_user_images", lambda user_id, stop_at: 0)
     no_db_client.post("/api/uploads/sign", json={"ext": "png"})
     assert seen == [1]  # no_db_client's session user_id
+
+
+# --- Export -----------------------------------------------------------------
+
+def test_export_csv_includes_entries_fields_and_body(client):
+    entry_id = make_entry(client)
+    client.patch(f"/api/topics/runs/entries/{entry_id}", json={"body": DOC})
+    res = client.get("/api/export.csv")
+    assert res.status_code == 200
+    assert res.headers["Content-Type"].startswith("text/csv")
+    assert "attachment" in res.headers["Content-Disposition"]
+    lines = res.get_data(as_text=True).splitlines()
+    assert lines[0].startswith("topic,id,date,image,")
+    assert lines[0].endswith(",body")
+    assert any("2026-07-09" in l and "Run" in l for l in lines[1:])
+    assert "a caption" in res.get_data(as_text=True)

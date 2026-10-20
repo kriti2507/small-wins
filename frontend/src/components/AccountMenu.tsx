@@ -44,6 +44,7 @@ export default function AccountMenu() {
         <div className="account-menu" role="menu">
           {user?.email && <p className="account-email">{user.email}</p>}
           <Link to="/apps" role="menuitem">Connected apps</Link>
+          <a href="/api/export.csv" role="menuitem" download>Export CSV</a>
           <button type="button" role="menuitem" onClick={() => logout()}>
             Sign out
           </button>

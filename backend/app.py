@@ -414,5 +414,42 @@ def delete_entry(slug, entry_id):
     return jsonify({"ok": True})
 
 
+# --- Export ----------------------------------------------------------------
+
+def doc_text(doc):
+    """Plain text of a TipTap doc, one line per top-level block."""
+    def text(node):
+        if not isinstance(node, dict):
+            return ""
+        return node.get("text", "") + "".join(text(c) for c in node.get("content") or [])
+
+    return "\n".join(t for t in (text(b) for b in (doc or {}).get("content") or []) if t)
+
+
+@app.route("/api/export.csv", methods=["GET"])
+@auth.login_required
+def export_csv():
+    """Every entry across every topic as one CSV; a topic's fields become
+    columns, blank on rows from topics that don't have them.
+    """
+    import csv
+    import io
+
+    topics = db.load_topics(g.user_id)
+    keys = list(dict.fromkeys(f["key"] for t in topics for f in t["fields"]))
+    out = io.StringIO()
+    writer = csv.writer(out)
+    writer.writerow(["topic", "id", "date", "image", *keys, "body"])
+    for t in topics:
+        for e in db.load_entries(g.user_id, t["slug"]):
+            body = doc_text(db.load_post(g.user_id, t["slug"], e["id"]))
+            row = [e.get(k) for k in keys]
+            writer.writerow([t["name"], e["id"], e["date"], e["image"] or "", *row, body])
+    return out.getvalue(), 200, {
+        "Content-Type": "text/csv; charset=utf-8",
+        "Content-Disposition": 'attachment; filename="small-wins.csv"',
+    }
+
+
 if __name__ == "__main__":
     app.run(debug=True, port=5000)  # local only; Vercel imports `app` instead
