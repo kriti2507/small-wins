@@ -380,7 +380,7 @@ h3 {
 }
 
 .action-menu-list button:hover {
-  background: #f3ebdd;
+  background: var(--border-soft);
 }
 
 .action-menu-list button.danger {

@@ -47,14 +47,16 @@ export default function EntryList({ topic, entries, colorIndex, onDeleted }: Pro
         return (
           <div className={`tile ${layout}`} key={entry.id}>
             <Link className="tile-link" to={href} aria-label={t.heading} />
-            <ActionMenu
-              className="corner-menu"
-              label={`Actions for ${t.heading}`}
-              items={[
-                { label: "Edit", onSelect: () => navigate(`${href}?edit=1`) },
-                { label: "Delete…", danger: true, onSelect: () => setConfirming(entry.id) },
-              ]}
-            />
+            {confirming !== entry.id && (
+              <ActionMenu
+                className="corner-menu"
+                label={`Actions for ${t.heading}`}
+                items={[
+                  { label: "Edit", onSelect: () => navigate(`${href}?edit=1`) },
+                  { label: "Delete…", danger: true, onSelect: () => setConfirming(entry.id) },
+                ]}
+              />
+            )}
             <div className="photo" style={{ background: gradient }}>
               <span className="initial">{t.initial}</span>
               {t.image && (

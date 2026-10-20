@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 
 export interface MenuItem {
   label: string;
@@ -13,12 +13,14 @@ interface Props {
   className?: string;
 }
 
-// A small round "⋯" button that opens a short menu. Closes on an outside
-// click, Escape, or picking an item. Clicks don't propagate, so it can sit
-// on top of a card or tile that is itself a link.
+// A small round "⋯" button that discloses a short list of actions. Closes on
+// an outside click, Escape, losing focus, or picking an item. A card or tile
+// is often itself covered by a link; this sits as a sibling stacked above it
+// (via z-index), and clicks still stop propagation as a safeguard.
 export default function ActionMenu({ label, items, className = "" }: Props) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
+  const listId = useId();
 
   useEffect(() => {
     if (!open) return;
@@ -37,13 +39,19 @@ export default function ActionMenu({ label, items, className = "" }: Props) {
   }, [open]);
 
   return (
-    <div ref={ref} className={`action-menu${open ? " open" : ""} ${className}`}>
+    <div
+      ref={ref}
+      className={["action-menu", open && "open", className].filter(Boolean).join(" ")}
+      onBlur={(e) => {
+        if (!ref.current?.contains(e.relatedTarget as Node)) setOpen(false);
+      }}
+    >
       <button
         type="button"
         className="action-menu-button"
         aria-label={label}
-        aria-haspopup="menu"
         aria-expanded={open}
+        aria-controls={listId}
         onClick={(e) => {
           e.preventDefault();
           e.stopPropagation();
@@ -53,12 +61,11 @@ export default function ActionMenu({ label, items, className = "" }: Props) {
         ⋯
       </button>
       {open && (
-        <div className="action-menu-list" role="menu">
+        <div className="action-menu-list" id={listId}>
           {items.map((item) => (
             <button
               key={item.label}
               type="button"
-              role="menuitem"
               className={item.danger ? "danger" : ""}
               onClick={(e) => {
                 e.preventDefault();

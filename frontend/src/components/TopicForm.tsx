@@ -99,6 +99,7 @@ export default function TopicForm({ topic, entries = [], onSaved, onCancel }: Pr
           name="name"
           placeholder="Hikes"
           required
+          autoFocus={!!topic}
           value={name}
           onChange={(e) => setName(e.target.value)}
         />

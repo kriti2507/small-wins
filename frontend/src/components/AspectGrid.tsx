@@ -60,18 +60,20 @@ export default function AspectGrid({ topicsData, onAddMore, onChanged }: Props) 
         const count = entries.length;
         return (
           <div className="aspect-box" key={topic.slug}>
-            <ActionMenu
-              className="corner-menu"
-              label={`Actions for ${topic.name}`}
-              items={[
-                { label: "Edit", onSelect: () => setEditing(topic.slug) },
-                // The server refuses to delete the last topic (it would be
-                // re-seeded), so don't offer it.
-                ...(topicsData.length > 1
-                  ? [{ label: "Delete…", danger: true, onSelect: () => setConfirming(topic.slug) }]
-                  : []),
-              ]}
-            />
+            {confirming !== topic.slug && (
+              <ActionMenu
+                className="corner-menu"
+                label={`Actions for ${topic.name}`}
+                items={[
+                  { label: "Edit", onSelect: () => setEditing(topic.slug) },
+                  // The server refuses to delete the last topic (it would be
+                  // re-seeded), so don't offer it.
+                  ...(topicsData.length > 1
+                    ? [{ label: "Delete…", danger: true, onSelect: () => setConfirming(topic.slug) }]
+                    : []),
+                ]}
+              />
+            )}
             <h2>{topic.name}</h2>
             <div className="graph">
               <SummaryGraph topic={topic} entries={entries} colorIndex={colorIndex} />

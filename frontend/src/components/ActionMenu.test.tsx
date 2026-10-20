@@ -8,9 +8,8 @@ describe("ActionMenu", () => {
       <ActionMenu label="Actions for Workout" items={[{ label: "Edit", onSelect: () => {} }]} />,
     );
     expect(html).toContain('aria-label="Actions for Workout"');
-    expect(html).toContain('aria-haspopup="menu"');
     expect(html).toContain('aria-expanded="false"');
     expect(html).toContain("⋯");
-    expect(html).not.toContain('role="menu"');
+    expect(html).not.toContain("action-menu-list");
   });
 });
