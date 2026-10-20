@@ -642,7 +642,23 @@ button.danger:hover {
   margin-left: auto;
 }
 
-/* Runs page */
+/* Topic title with its ⋯ menu beside it. */
+.topic-head {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin-bottom: 1.25rem;
+}
+
+.topic-head h1 {
+  margin: 0;
+}
+
+.topic-head + .confirm-row {
+  margin-bottom: 1.25rem;
+}
+
+/* Topic page */
 .summary-box {
   background: var(--card);
   border: 1px solid var(--border);
