@@ -1365,8 +1365,10 @@ a.back:hover {
   text-overflow: ellipsis;
 }
 
-.account-menu a,
-.account-menu button {
+/* Direct children only: the delete confirmation's buttons keep their usual
+   look. */
+.account-menu > a,
+.account-menu > button {
   padding: 0.5rem 0.6rem;
   font-size: 0.9rem;
   text-align: left;
@@ -1377,11 +1379,27 @@ a.back:hover {
   border-radius: 8px;
 }
 
-.account-menu a:hover,
-.account-menu button:hover {
+.account-menu > a:hover,
+.account-menu > button:hover {
   background: var(--border-soft);
   box-shadow: none;
   transform: none;
+}
+
+.account-menu > button.danger,
+.account-menu > button.danger:hover {
+  color: var(--danger);
+}
+
+.account-menu .confirm-row {
+  width: 240px;
+  margin-top: 0.3rem;
+  font-size: 0.85rem;
+}
+
+.account-menu .form-error {
+  max-width: 240px;
+  padding: 0.4rem 0.6rem 0;
 }
 
 .login-error {

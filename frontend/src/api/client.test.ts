@@ -1,5 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { readJson, httpErrorMessage, uploadImage, listGrants, revokeGrant } from "./client";
+import {
+  readJson, httpErrorMessage, uploadImage, listGrants, revokeGrant, deleteAccount,
+} from "./client";
 
 vi.mock("../lib/image", () => ({
   prepareImage: vi.fn(),
@@ -194,5 +196,30 @@ describe("grants", () => {
   it("reports the API's error when revoking fails", async () => {
     reply = new Response(JSON.stringify({ error: "Not found." }), { status: 404 });
     await expect(revokeGrant(3)).rejects.toThrow("Not found.");
+  });
+});
+
+describe("deleteAccount", () => {
+  let reply: Response;
+  const calls: { url: string; init?: RequestInit }[] = [];
+
+  beforeEach(() => {
+    calls.length = 0;
+    vi.stubGlobal("fetch", vi.fn(async (url: string, init?: RequestInit) => {
+      calls.push({ url, init });
+      return reply;
+    }));
+  });
+  afterEach(() => vi.unstubAllGlobals());
+
+  it("sends DELETE /api/account", async () => {
+    reply = new Response(JSON.stringify({ ok: true }), { status: 200 });
+    await expect(deleteAccount()).resolves.toEqual({ ok: true });
+    expect(calls[0]).toEqual({ url: "/api/account", init: { method: "DELETE" } });
+  });
+
+  it("rejects when the server refuses, so the UI can say so", async () => {
+    reply = new Response(JSON.stringify({ error: "Sign in to continue." }), { status: 401 });
+    await expect(deleteAccount()).rejects.toThrow("Sign in to continue.");
   });
 });

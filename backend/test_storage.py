@@ -312,3 +312,33 @@ def test_count_user_images_pages_until_it_reaches_stop_at(monkeypatch):
     monkeypatch.setattr(storage.urllib.request, "urlopen", fake_urlopen)
     assert storage.count_user_images(7, stop_at=1500) == 2000
     assert offsets == [0, 1000]  # stopped without fetching a third page
+
+
+def test_delete_user_objects_bulk_deletes_everything_under_their_folder(monkeypatch):
+    import json
+    seen = []
+
+    def fake_urlopen(req):
+        seen.append((req.get_method(), req.full_url, json.loads(req.data)))
+        if req.get_method() == "POST":  # the listing
+            return FakeResp(b'[{"name": "a.jpg", "id": "1"}, {"name": "a.thumb", "id": "2"}]')
+        return FakeResp(b"[]")
+
+    monkeypatch.setattr(storage.urllib.request, "urlopen", fake_urlopen)
+    storage.delete_user_objects(7)
+    assert seen[0][2]["prefix"] == "users/7/"
+    assert seen[1] == ("DELETE", "https://proj.supabase.co/storage/v1/object/uploads",
+                       {"prefixes": ["users/7/a.jpg", "users/7/a.thumb"]})
+    assert len(seen) == 2
+
+
+def test_delete_user_objects_sends_nothing_for_an_empty_folder(monkeypatch):
+    methods = []
+
+    def fake_urlopen(req):
+        methods.append(req.get_method())
+        return FakeResp(b"[]")
+
+    monkeypatch.setattr(storage.urllib.request, "urlopen", fake_urlopen)
+    storage.delete_user_objects(7)
+    assert methods == ["POST"]

@@ -195,7 +195,12 @@ shows "You've reached the limit of …". The image count lists the user's
 storage folder on each upload, so uploads abandoned before saving count too;
 deleting entries frees their images.
 
-To remove someone: `delete from users where id = <id>;` in the Supabase SQL
+Users can delete their own account from the account menu ("Delete account"):
+that removes their users row (and with it their data and MCP apps), their
+images under `users/<id>/`, and signs them out. Signing in again with the same
+Google account starts a fresh, empty account.
+
+To remove someone yourself: `delete from users where id = <id>;` in the Supabase SQL
 editor deletes their account, data and MCP apps (their session ends on its
 next `/api/auth/me`). Their images stay in the bucket under `users/<id>/`
 until you delete that folder. Nothing yet stops them signing in again as a
