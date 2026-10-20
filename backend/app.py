@@ -87,6 +87,9 @@ def slugify(s):
 
 FIELD_TYPES = ("text", "number", "pace")
 DIRECTIONS = ("higher", "lower", "none")
+# Entry columns outside the "values" jsonb; a field keyed the same would be
+# silently dropped (save_entry) or overwrite it (_flatten).
+RESERVED_KEYS = ("id", "date", "image", "body")
 
 
 def merge_fields(old, submitted):
@@ -101,7 +104,7 @@ def merge_fields(old, submitted):
     if not isinstance(submitted, list):
         raise ValueError("Fields must be a list.")
     by_key = {f["key"]: f for f in old}
-    taken = set(by_key)
+    taken = set(by_key) | set(RESERVED_KEYS)
     seen = set()
     fields = []
     for f in submitted:
@@ -112,12 +115,15 @@ def merge_fields(old, submitted):
         if not label:
             raise ValueError("Every field needs a label.")
         key = f.get("key")
+        if key is not None and not isinstance(key, str):
+            raise ValueError("Invalid field.")
         if key is not None:
             if key not in by_key:
                 raise ValueError("That field no longer exists.")
             if key in seen:
                 raise ValueError("A field is listed twice.")
             ftype = by_key[key]["type"]
+            default_direction = by_key[key]["direction"]
         else:
             ftype = f.get("type", "number")
             if ftype not in FIELD_TYPES:
@@ -128,9 +134,10 @@ def merge_fields(old, submitted):
             key, n = base, 2
             while key in taken:
                 key, n = f"{base}_{n}", n + 1
+            default_direction = "none"
         taken.add(key)
         seen.add(key)
-        direction = f.get("direction", "none")
+        direction = f.get("direction", default_direction)
         if ftype == "text":
             direction = "none"
         elif direction not in DIRECTIONS:
@@ -224,18 +231,18 @@ def add_topic():
     if layout not in LAYOUTS:
         layout = LAYOUTS[0]
 
-    fields = []
-    for f in data.get("fields", []):
-        label = (f.get("label") or "").strip()
-        if not label:
-            continue
-        ftype = f.get("type", "number")
-        direction = f.get("direction", "none")
-        if ftype == "text":
-            direction = "none"
-        fields.append(
-            {"key": slugify(label), "label": label, "type": ftype, "direction": direction}
-        )
+    # Silently drop blank-label rows (unchanged behaviour), then let
+    # merge_fields assign keys, reject reserved/invalid ones, and validate
+    # types and directions just like editing an existing topic's fields does.
+    raw_fields = data.get("fields", [])
+    if isinstance(raw_fields, list):
+        raw_fields = [f for f in raw_fields
+                      if isinstance(f, dict) and isinstance(f.get("label"), str)
+                      and f.get("label").strip()]
+    try:
+        fields, _ = merge_fields([], raw_fields)
+    except ValueError as err:
+        return jsonify({"error": str(err)}), 400
 
     topic = {"slug": slug, "name": name, "color": color, "layout": layout, "fields": fields}
     if len(json.dumps(topic)) > MAX_TOPIC_BYTES:

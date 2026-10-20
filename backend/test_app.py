@@ -474,6 +474,31 @@ def test_add_topic_rejects_an_oversized_topic(client):
     assert [t["slug"] for t in client.get("/api/topics").get_json()] == ["workout", "journal"]
 
 
+def test_add_topic_fields_go_through_merge_fields_for_key_dedup(client):
+    res = client.post("/api/topics", json={"name": "Books", "fields": [
+        {"label": "Sets", "type": "number", "direction": "higher"},
+        {"label": "sets", "type": "number", "direction": "higher"},
+    ]})
+    assert res.status_code == 201
+    assert [f["key"] for f in res.get_json()["fields"]] == ["sets", "sets_2"]
+
+
+def test_add_topic_field_avoids_a_reserved_entry_key(client):
+    res = client.post("/api/topics", json={
+        "name": "Books", "fields": [{"label": "Date", "type": "text"}],
+    })
+    assert res.status_code == 201
+    assert res.get_json()["fields"][0]["key"] == "date_2"
+
+
+def test_add_topic_rejects_an_invalid_field_type(client):
+    res = client.post("/api/topics", json={
+        "name": "Books", "fields": [{"label": "X", "type": "date"}],
+    })
+    assert res.status_code == 400
+    assert [t["slug"] for t in client.get("/api/topics").get_json()] == ["workout", "journal"]
+
+
 def test_add_entry_refuses_once_the_entry_limit_is_reached(client, monkeypatch):
     monkeypatch.setattr(app_module, "MAX_ENTRIES_PER_USER", 2)
     client.post("/api/topics", json={"name": "Books"})
@@ -985,6 +1010,24 @@ def test_merge_fields_never_reuses_an_existing_key():
     assert removed == ["duration"]
 
 
+def test_merge_fields_avoids_reserved_entry_keys():
+    fields, removed = app_module.merge_fields(OLD_FIELDS, [
+        {"key": "title", "label": "Title"},
+        {"key": "duration", "label": "Duration"},
+        {"label": "Date", "type": "text"},
+    ])
+    assert fields[-1]["key"] == "date_2"
+    assert removed == []
+
+
+def test_merge_fields_keeps_existing_direction_when_omitted():
+    fields, removed = app_module.merge_fields(OLD_FIELDS, [
+        {"key": "title", "label": "Title"},
+        {"key": "duration", "label": "Duration"},
+    ])
+    assert fields[1]["direction"] == "higher"
+
+
 @pytest.mark.parametrize("submitted", [
     "not a list",
     [{"key": "nope", "label": "X"}],
@@ -994,6 +1037,7 @@ def test_merge_fields_never_reuses_an_existing_key():
     [{"key": "duration", "label": "D", "direction": "sideways"}],
     [{"label": "!!!", "type": "text"}],
     ["title"],
+    [{"key": ["x"], "label": "X"}],
 ])
 def test_merge_fields_rejects_bad_input(submitted):
     with pytest.raises(ValueError):
