@@ -338,11 +338,93 @@ h3 {
   font-weight: 500;
 }
 
-/* Compact secondary buttons for per-card / per-tile Edit and Delete. */
-.small-action {
-  padding: 0.25rem 0.75rem;
-  font-size: 0.82rem;
-  text-decoration: none;
+/* ⋯ menu for a card's, tile's or topic's actions (ActionMenu). */
+.action-menu {
+  position: relative;
+}
+
+.action-menu-button {
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.05rem;
+  line-height: 1;
+  background: rgba(255, 253, 248, 0.92);
+}
+
+.action-menu-list {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 20;
+  min-width: 8.5rem;
+  display: flex;
+  flex-direction: column;
+  padding: 4px;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  box-shadow: 0 8px 20px -6px rgba(var(--shadow-tint), 0.3);
+}
+
+.action-menu-list button,
+.action-menu-list button:hover,
+.action-menu-list button.danger {
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  text-align: left;
+  padding: 0.35rem 0.7rem;
+  font-size: 0.88rem;
+  box-shadow: none;
+  transform: none;
+}
+
+.action-menu-list button:hover {
+  background: #f3ebdd;
+}
+
+.action-menu-list button.danger {
+  color: var(--danger);
+}
+
+.action-menu-list button.danger:hover {
+  background: #f8e6df;
+  color: var(--danger);
+}
+
+/* On cards and tiles the ⋯ sits in the top-right corner and appears on hover
+   or keyboard focus; screens without hover always show it, faintly. */
+.corner-menu {
+  position: absolute;
+  top: 0.75rem;
+  right: 0.75rem;
+  z-index: 3;
+  opacity: 0;
+  transition: opacity 0.2s ease;
+}
+
+.aspect-box:hover .corner-menu,
+.tile:hover .corner-menu,
+.corner-menu:focus-within,
+.corner-menu.open {
+  opacity: 1;
+}
+
+@media (hover: none) {
+  .corner-menu {
+    opacity: 0.8;
+  }
+}
+
+/* Cards and tiles are transformed, so each is its own stacking context; lift
+   the one whose menu is open above its neighbours. */
+.aspect-box:has(.action-menu.open),
+.tile:has(.action-menu.open) {
+  z-index: 5;
 }
 
 .add-more {
