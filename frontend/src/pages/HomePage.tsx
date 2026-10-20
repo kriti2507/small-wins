@@ -83,11 +83,15 @@ export default function HomePage() {
         </div>
       </section>
 
-      <AspectGrid topicsData={topicsData} onAddMore={() => setShowForm(true)} />
+      <AspectGrid
+        topicsData={topicsData}
+        onAddMore={() => setShowForm(true)}
+        onChanged={load}
+      />
 
       {showForm && (
         <TopicForm
-          onCreated={() => {
+          onSaved={() => {
             setShowForm(false);
             load();
           }}

@@ -61,15 +61,30 @@ def test_topics_are_private_and_slugs_unique_per_user(uid, other):
     assert db.find_topic(other, "books")["name"] == "Other Books"
 
 
-def test_set_topic_layout_updates_only_the_users_topic(uid, other):
+def test_update_topic_updates_only_the_users_topic(uid, other):
     import db
     db.load_topics(uid)
     db.load_topics(other)
-    updated = db.set_topic_layout(uid, "runs", "thumbnail")
+    updated = db.update_topic(uid, "runs", {"layout": "thumbnail", "name": "Jogs"})
     assert updated["layout"] == "thumbnail"
-    assert db.find_topic(uid, "runs")["layout"] == "thumbnail"
+    assert updated["slug"] == "runs"
+    assert db.find_topic(uid, "runs")["name"] == "Jogs"
     assert db.find_topic(other, "runs")["layout"] == "photo-top"
-    assert db.set_topic_layout(uid, "nope", "thumbnail") is None
+    assert db.update_topic(uid, "nope", {"layout": "thumbnail"}) is None
+
+
+def test_delete_topic_cascades_entries_and_only_touches_the_users_topic(uid, other):
+    import db
+    db.load_topics(uid)
+    db.load_topics(other)
+    db.save_entry(uid, "runs", {"id": 1, "date": "2026-07-09", "image": None})
+    db.save_post(uid, "runs", 1, {"type": "doc", "content": []})
+    db.add_topic(uid, BOOKS)  # so the reload below doesn't re-seed "runs"
+    db.delete_topic(uid, "runs")
+    assert [t["slug"] for t in db.load_topics(uid)] == ["books"]
+    assert db.load_entries(uid, "runs") == []
+    assert db.load_post(uid, "runs", 1) is None
+    assert db.find_topic(other, "runs") is not None
 
 
 def test_entry_round_trip_flattens_values(uid):

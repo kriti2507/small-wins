@@ -164,7 +164,12 @@ export default function TopicPage() {
         />
       )}
 
-      <EntryList topic={topic} entries={entries} colorIndex={colorIndex} />
+      <EntryList
+        topic={topic}
+        entries={entries}
+        colorIndex={colorIndex}
+        onDeleted={() => loadEntries(slug)}
+      />
     </>
   );
 }

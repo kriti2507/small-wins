@@ -319,13 +319,30 @@ h3 {
   margin-bottom: 1.4rem;
 }
 
-/* "Learn more" is a router Link (<a>), so strip the default underline and
-   pin it to the bottom so every card's button lines up. */
-.aspect-box .btn.primary {
-  align-self: flex-start;
+/* "Learn more" + Edit/Delete, pinned to the bottom so every card's buttons
+   line up. "Learn more" is a router Link (<a>), so strip the underline. */
+.aspect-actions,
+.aspect-box .confirm-row {
   margin-top: auto;
+}
+
+.aspect-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.aspect-box .btn.primary {
+  margin-right: auto;
   text-decoration: none;
   font-weight: 500;
+}
+
+/* Compact secondary buttons for per-card / per-tile Edit and Delete. */
+.small-action {
+  padding: 0.25rem 0.75rem;
+  font-size: 0.82rem;
+  text-decoration: none;
 }
 
 .add-more {
@@ -618,6 +635,29 @@ button.danger:hover {
   transform: rotate(0deg) translateY(-4px);
   box-shadow: 0 4px 10px rgba(var(--shadow-tint), 0.16),
     0 18px 32px -14px rgba(var(--shadow-tint), 0.35);
+}
+
+/* The tile is a div, not a link, so it can hold Edit/Delete buttons. This
+   invisible link covers the whole tile; the actions row sits above it. */
+.tile-link {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  border-radius: 4px;
+}
+
+.tile-actions {
+  position: relative;
+  z-index: 2;
+  display: flex;
+  gap: 0.4rem;
+  margin-top: 0.5rem;
+}
+
+.tile-actions .confirm-row {
+  flex: 1;
+  padding: 0.6rem 0.7rem;
+  font-size: 0.85rem;
 }
 
 .tile .photo {

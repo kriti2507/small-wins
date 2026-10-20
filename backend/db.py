@@ -91,14 +91,29 @@ def add_topic(user_id, topic):
     )
 
 
-def set_topic_layout(user_id, slug, layout):
+TOPIC_EDITABLE = ("name", "color", "layout")
+
+
+def update_topic(user_id, slug, changes):
+    """Apply changes (a subset of TOPIC_EDITABLE) to one topic. The slug never
+    changes, so entry URLs stay stable across a rename."""
+    cols = [c for c in TOPIC_EDITABLE if c in changes]
+    if not cols:
+        return find_topic(user_id, slug)
     conn = get_conn()
     row = conn.execute(
-        "update topics set layout=%s where user_id=%s and slug=%s "
-        "returning slug, name, color, layout, fields",
-        (layout, user_id, slug),
+        "update topics set " + ", ".join(f"{c}=%s" for c in cols) +
+        " where user_id=%s and slug=%s returning slug, name, color, layout, fields",
+        (*[changes[c] for c in cols], user_id, slug),
     ).fetchone()
     return dict(row) if row else None
+
+
+def delete_topic(user_id, slug):
+    """Its entries and their posts go with it via the FKs' on delete cascade."""
+    get_conn().execute(
+        "delete from topics where user_id=%s and slug=%s", (user_id, slug)
+    )
 
 
 def _flatten(row):
@@ -198,6 +213,14 @@ def all_entry_images(user_id):
 def all_post_docs(user_id):
     conn = get_conn()
     rows = conn.execute("select doc from posts where user_id=%s", (user_id,)).fetchall()
+    return [r["doc"] for r in rows]
+
+
+def topic_post_docs(user_id, slug):
+    conn = get_conn()
+    rows = conn.execute(
+        "select doc from posts where user_id=%s and topic_slug=%s", (user_id, slug)
+    ).fetchall()
     return [r["doc"] for r in rows]
 
 
