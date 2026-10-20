@@ -1,16 +1,29 @@
 import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { useAuth } from "../auth";
+import ConfirmRow from "./ConfirmRow";
 
 // Avatar pill in the top corner that opens a small account menu.
 export default function AccountMenu() {
-  const { user, logout } = useAuth();
+  const { user, logout, deleteAccount } = useAuth();
   const [open, setOpen] = useState(false);
+  const [confirming, setConfirming] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const ref = useRef<HTMLDivElement>(null);
 
-  // Close on a click outside the menu or on Escape.
+  function toggle() {
+    if (!open) {
+      setConfirming(false);
+      setError(null);
+    }
+    setOpen(!open);
+  }
+
+  // Close on a click outside the menu or on Escape, unless a delete is
+  // underway (its outcome would have nowhere to show).
   useEffect(() => {
-    if (!open) return;
+    if (!open || deleting) return;
     const onClick = (e: MouseEvent) => {
       if (!ref.current?.contains(e.target as Node)) setOpen(false);
     };
@@ -21,7 +34,18 @@ export default function AccountMenu() {
       document.removeEventListener("mousedown", onClick);
       document.removeEventListener("keydown", onKey);
     };
-  }, [open]);
+  }, [open, deleting]);
+
+  async function onDelete() {
+    setDeleting(true);
+    setError(null);
+    try {
+      await deleteAccount(); // signs out, so this menu unmounts
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Could not delete your account.");
+      setDeleting(false);
+    }
+  }
 
   return (
     <div className="account" ref={ref}>
@@ -31,7 +55,8 @@ export default function AccountMenu() {
         aria-label="Account menu"
         aria-haspopup="menu"
         aria-expanded={open}
-        onClick={() => setOpen(!open)}
+        disabled={deleting}
+        onClick={toggle}
       >
         {user?.avatar_url ? (
           <img className="account-avatar" src={user.avatar_url} alt="" referrerPolicy="no-referrer" />
@@ -48,6 +73,23 @@ export default function AccountMenu() {
           <button type="button" role="menuitem" onClick={() => logout()}>
             Sign out
           </button>
+          {confirming ? (
+            <ConfirmRow
+              message="Delete your account? All your aspects, entries and images will be gone for good."
+              confirmLabel="Delete account"
+              cancelLabel="Cancel"
+              disabled={deleting}
+              busy={deleting}
+              busyLabel="Deleting…"
+              onConfirm={onDelete}
+              onCancel={() => setConfirming(false)}
+            />
+          ) : (
+            <button type="button" role="menuitem" className="danger" onClick={() => setConfirming(true)}>
+              Delete account
+            </button>
+          )}
+          {error && <p className="form-error">{error}</p>}
         </div>
       )}
     </div>

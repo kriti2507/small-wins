@@ -9,12 +9,14 @@ interface Auth {
   // nothing meanwhile, so a signed-in user never flashes the login page.
   loading: boolean;
   logout: () => Promise<void>;
+  deleteAccount: () => Promise<void>;
 }
 
 const AuthContext = createContext<Auth>({
   user: null,
   loading: true,
   logout: async () => {},
+  deleteAccount: async () => {},
 });
 
 export function AuthProvider({ children }: { children: ReactNode }) {
@@ -36,8 +38,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setUser(null);
   }
 
+  async function deleteAccount() {
+    // Unlike logout, a failure must surface: the account still exists.
+    await api.deleteAccount();
+    setUser(null);
+  }
+
   return (
-    <AuthContext.Provider value={{ user, loading, logout }}>
+    <AuthContext.Provider value={{ user, loading, logout, deleteAccount }}>
       {children}
     </AuthContext.Provider>
   );

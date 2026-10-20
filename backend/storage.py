@@ -218,6 +218,23 @@ def count_user_images(user_id, stop_at):
     return count
 
 
+def delete_user_objects(user_id):
+    """Delete every object under users/<user_id>/. Lists everything first:
+    deleting between pages would shift the offsets and skip objects."""
+    prefix = f"users/{user_id}/"
+    names = [prefix + name for page in _list_pages(prefix) for name in page]
+    base, _key, bucket = _cfg()
+    for i in range(0, len(names), 1000):  # Supabase's cap per bulk delete
+        req = _authed(urllib.request.Request(
+            f"{base}/storage/v1/object/{bucket}",
+            data=json.dumps({"prefixes": names[i:i + 1000]}).encode(),
+            method="DELETE",
+        ))
+        req.add_header("Content-Type", "application/json")
+        with urllib.request.urlopen(req) as resp:
+            resp.read()
+
+
 def delete_object(name):
     """Delete an object from the bucket. Raises NotFound if it isn't there;
     other exceptions propagate to the caller."""

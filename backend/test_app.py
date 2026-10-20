@@ -930,6 +930,48 @@ def test_logout_signs_out(client):
     assert client.get("/api/topics").status_code == 401
 
 
+def test_delete_account_removes_the_user_their_data_and_images(client, second_client, monkeypatch):
+    from conftest import make_grant
+    _set_storage_env(monkeypatch)
+    emptied = []
+    monkeypatch.setattr(app_module.storage, "delete_user_objects", emptied.append)
+    uid = my_id(client)
+    make_entry(client)
+    _grant_id, credential = make_grant(uid)
+    second_topics = second_client.get("/api/topics").get_json()
+
+    assert client.delete("/api/account").get_json() == {"ok": True}
+    assert emptied == [uid]
+    assert client.get("/api/auth/me").status_code == 401
+    assert client.get("/api/topics").status_code == 401
+    # The MCP grant went with the user row.
+    headers = {"Authorization": f"Bearer {credential}"}
+    assert client.get("/api/topics", headers=headers).status_code == 401
+    with app_module.app.app_context():
+        assert app_module.db.find_user(uid) is None
+        assert app_module.db.count_entries(uid) == 0
+    # Nobody else is touched.
+    assert second_client.get("/api/topics").get_json() == second_topics
+
+
+def test_delete_account_still_succeeds_when_image_cleanup_fails(client, monkeypatch):
+    def boom(user_id):
+        raise RuntimeError("storage down")
+    monkeypatch.setattr(app_module.storage, "delete_user_objects", boom)
+    assert client.delete("/api/account").status_code == 200
+    assert client.get("/api/auth/me").status_code == 401
+
+
+def test_a_connected_app_cannot_delete_the_account(test_db, anon_client):
+    from conftest import make_grant, make_user
+    uid = make_user("sub-mcp", "mcp@example.com")
+    _grant_id, credential = make_grant(uid)
+    res = anon_client.delete("/api/account", headers={"Authorization": f"Bearer {credential}"})
+    assert res.status_code == 401
+    with app_module.app.app_context():
+        assert app_module.db.find_user(uid) is not None
+
+
 # --- login_required ----------------------------------------------------------
 
 def sign_bad_ext(c, headers=None):

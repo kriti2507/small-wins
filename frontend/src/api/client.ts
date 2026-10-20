@@ -204,6 +204,13 @@ export async function getMe(): Promise<User | null> {
   return (await readJson<{ user: User }>(res)).user;
 }
 
+/** Delete the signed-in user's account, data and images, and sign out. */
+export function deleteAccount(): Promise<{ ok: boolean }> {
+  return fetch("/api/account", { method: "DELETE" }).then((r) =>
+    readJson<{ ok: boolean }>(r),
+  );
+}
+
 export function logout(): Promise<{ ok: boolean }> {
   return fetch("/api/auth/logout", { method: "POST" }).then((r) =>
     readJson<{ ok: boolean }>(r),

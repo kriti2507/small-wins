@@ -8,11 +8,12 @@ from functools import wraps
 
 from authlib.integrations.base_client import OAuthError
 from authlib.integrations.flask_client import OAuth
-from flask import Blueprint, g, jsonify, redirect, request, session, url_for
+from flask import Blueprint, current_app, g, jsonify, redirect, request, session, url_for
 from joserfc.errors import JoseError
 
 import db
 import grants
+import storage
 
 DEV_SECRET = "dev-only-not-secret"
 GOOGLE_METADATA_URL = "https://accounts.google.com/.well-known/openid-configuration"
@@ -99,6 +100,21 @@ def me():
 @bp.route("/api/auth/logout", methods=["POST"])
 def logout():
     session.clear()
+    return jsonify({"ok": True})
+
+
+@bp.route("/api/account", methods=["DELETE"])
+@grants.session_required  # the person in the browser, never a connected app
+def delete_account():
+    user_id = g.user_id
+    db.delete_user(user_id)
+    session.clear()
+    # The account is already gone; a failure here only leaves stray images,
+    # so it is logged rather than reported.
+    try:
+        storage.delete_user_objects(user_id)
+    except Exception as exc:
+        current_app.logger.warning("failed to delete images of user %s: %s", user_id, exc)
     return jsonify({"ok": True})
 
 

@@ -270,6 +270,12 @@ def find_user(user_id):
     return dict(row) if row else None
 
 
+def delete_user(user_id):
+    """Their topics, entries, posts and MCP grants go with it via the FKs'
+    on delete cascade. Images in storage are the caller's job."""
+    get_conn().execute("delete from users where id=%s", (user_id,))
+
+
 # --- MCP grants --------------------------------------------------------------
 
 GRANT_COLUMNS = (
