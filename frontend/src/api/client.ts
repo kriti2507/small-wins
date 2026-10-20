@@ -1,6 +1,7 @@
 import type { Topic, Entry, PostDoc, Grant } from "../types";
 import { prepareImage } from "../lib/image";
 import { loginPath } from "../lib/authPaths";
+import type { FieldPayload } from "../lib/fieldRows";
 
 /** A readable message for a response that carried no JSON error of its own. */
 export function httpErrorMessage(status: number, statusText = ""): string {
@@ -58,7 +59,7 @@ export function addTopic(payload: {
   name: string;
   color: string | null;
   layout: string;
-  fields: { label: string; type: string; direction: string }[];
+  fields: FieldPayload[];
 }): Promise<Topic> {
   return fetch("/api/topics", {
     method: "POST",
@@ -113,7 +114,7 @@ export function deleteEntry(slug: string, id: number): Promise<{ ok: boolean }> 
 
 export function updateTopic(
   slug: string,
-  changes: { name?: string; color?: string; layout?: string },
+  changes: { name?: string; color?: string; layout?: string; fields?: FieldPayload[] },
 ): Promise<Topic> {
   return fetch(`/api/topics/${slug}`, {
     method: "PATCH",

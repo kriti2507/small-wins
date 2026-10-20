@@ -197,12 +197,7 @@ h3 {
   opacity: 0.7;
 }
 
-/* Today: an accent outline with the date circled. */
-.day-cell.today {
-  border: 1.5px solid var(--accent);
-  background: rgba(179, 101, 74, 0.05);
-}
-
+/* Today: just the date circled; the cell itself stays like any other day. */
 .day-cell.today .day-label {
   align-self: flex-start;
   color: var(--card);
@@ -295,6 +290,7 @@ h3 {
 }
 
 .aspect-box {
+  position: relative;
   display: flex;
   flex-direction: column;
   background: var(--card);
@@ -312,6 +308,7 @@ h3 {
 
 .aspect-box h2 {
   margin: 0 0 1rem;
+  padding-right: 2.25rem;
   font-size: 1.2rem;
 }
 
@@ -319,30 +316,106 @@ h3 {
   margin-bottom: 1.4rem;
 }
 
-/* "Learn more" + Edit/Delete, pinned to the bottom so every card's buttons
-   line up. "Learn more" is a router Link (<a>), so strip the underline. */
-.aspect-actions,
+/* "Learn more" (or the delete confirmation) is pinned to the bottom so every
+   card's button lines up. It is a router Link (<a>), so strip the underline. */
+.aspect-box .btn.primary,
 .aspect-box .confirm-row {
   margin-top: auto;
 }
 
-.aspect-actions {
-  display: flex;
-  align-items: center;
-  gap: 0.4rem;
-}
-
 .aspect-box .btn.primary {
-  margin-right: auto;
+  align-self: flex-start;
   text-decoration: none;
   font-weight: 500;
 }
 
-/* Compact secondary buttons for per-card / per-tile Edit and Delete. */
-.small-action {
-  padding: 0.25rem 0.75rem;
-  font-size: 0.82rem;
-  text-decoration: none;
+/* ⋯ menu for a card's, tile's or topic's actions (ActionMenu). */
+.action-menu {
+  position: relative;
+}
+
+.action-menu-button {
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.05rem;
+  line-height: 1;
+  background: rgba(255, 253, 248, 0.92);
+}
+
+.action-menu-list {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 20;
+  min-width: 8.5rem;
+  display: flex;
+  flex-direction: column;
+  padding: 4px;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  box-shadow: 0 8px 20px -6px rgba(var(--shadow-tint), 0.3);
+}
+
+.action-menu-list button,
+.action-menu-list button:hover,
+.action-menu-list button.danger {
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  text-align: left;
+  padding: 0.35rem 0.7rem;
+  font-size: 0.88rem;
+  box-shadow: none;
+  transform: none;
+}
+
+.action-menu-list button:hover {
+  background: var(--border-soft);
+}
+
+.action-menu-list button.danger {
+  color: var(--danger);
+}
+
+.action-menu-list button.danger:hover {
+  background: #f8e6df;
+  color: var(--danger);
+}
+
+/* On cards and tiles the ⋯ sits in the top-right corner and appears on hover
+   or keyboard focus; screens without hover always show it, faintly. */
+.corner-menu {
+  position: absolute;
+  top: 0.75rem;
+  right: 0.75rem;
+  z-index: 3;
+  opacity: 0;
+  transition: opacity 0.2s ease;
+}
+
+.aspect-box:hover .corner-menu,
+.tile:hover .corner-menu,
+.corner-menu:focus-within,
+.corner-menu.open {
+  opacity: 1;
+}
+
+@media (hover: none) {
+  .corner-menu {
+    opacity: 0.8;
+  }
+}
+
+/* Cards and tiles are transformed, so each is its own stacking context; lift
+   the one whose menu is open above its neighbours. */
+.aspect-box:has(.action-menu.open),
+.tile:has(.action-menu.open) {
+  z-index: 5;
 }
 
 .add-more {
@@ -564,7 +637,23 @@ button.danger:hover {
   margin-left: auto;
 }
 
-/* Runs page */
+/* Topic title with its ⋯ menu beside it. */
+.topic-head {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin-bottom: 1.25rem;
+}
+
+.topic-head h1 {
+  margin: 0;
+}
+
+.topic-head + .confirm-row {
+  margin-bottom: 1.25rem;
+}
+
+/* Topic page */
 .summary-box {
   background: var(--card);
   border: 1px solid var(--border);
@@ -637,13 +726,19 @@ button.danger:hover {
     0 18px 32px -14px rgba(var(--shadow-tint), 0.35);
 }
 
-/* The tile is a div, not a link, so it can hold Edit/Delete buttons. This
-   invisible link covers the whole tile; the actions row sits above it. */
+/* The tile is a div, not a link, so it can hold its ⋯ menu and delete
+   confirmation. This invisible link covers the whole tile; those sit above it. */
 .tile-link {
   position: absolute;
   inset: 0;
   z-index: 1;
   border-radius: 4px;
+}
+
+/* Inside the polaroid's white border, over the photo's corner. */
+.tile .corner-menu {
+  top: 16px;
+  right: 16px;
 }
 
 .tile-actions {
@@ -756,7 +851,8 @@ button.danger:hover {
 
 .tile.thumbnail .body {
   flex: 1;
-  padding: 0.1rem 0;
+  /* Right padding keeps the heading clear of the corner ⋯ menu. */
+  padding: 0.1rem 2rem 0.1rem 0;
 }
 
 /* Add-entry form */
@@ -770,6 +866,13 @@ button.danger:hover {
   gap: 0.75rem;
   max-width: 420px;
   box-shadow: 0 2px 10px -4px rgba(var(--shadow-tint), 0.12);
+}
+
+/* A field row carries reorder buttons and (for existing fields) a type tag
+   alongside the label and direction selects — 420px crowds that, so the
+   topic form (create and edit) gets more room than a plain .form. */
+.topic-form {
+  max-width: 560px;
 }
 
 .form label {
@@ -851,12 +954,13 @@ a.back:hover {
   box-shadow: 0 0 0 2px var(--card) inset;
 }
 
-/* Create-topic field rows */
+/* Topic field rows (create and edit) */
 .field-row {
   display: flex;
   gap: 0.5rem;
   margin-bottom: 0.5rem;
   flex-wrap: wrap;
+  align-items: center;
 }
 
 .field-row input,
@@ -871,6 +975,69 @@ a.back:hover {
 
 .field-row .f-label {
   flex: 1 1 160px;
+}
+
+.field-list {
+  display: grid;
+  gap: 0.1rem;
+}
+
+/* In the topic form each field is a tinted block, alternating two light
+   shades of the chosen color (set inline as --row-a / --row-b), so a row that
+   wraps onto two lines still reads as one field. The first child is the
+   "Fields" label, so the first row is an even child. */
+.field-list > .field-row {
+  padding: 0.55rem 0.65rem;
+  border-radius: 10px;
+  margin-bottom: 0.4rem;
+  background: color-mix(in srgb, var(--row-a) 70%, var(--card));
+}
+
+.field-list > .field-row:nth-child(odd) {
+  background: color-mix(in srgb, var(--row-b) 55%, var(--card));
+}
+
+.field-list-label {
+  font-size: 0.9rem;
+  color: var(--ink-muted);
+}
+
+/* ▲▼ reorder buttons, stacked and compact so they work as touch targets
+   without crowding the row. */
+.f-move {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.f-move button {
+  min-width: 24px;
+  min-height: 24px;
+  padding: 0;
+  font-size: 0.6rem;
+  line-height: 1;
+  border-radius: 6px;
+}
+
+/* These are small enough that the usual lift-on-hover looks like a jitter;
+   skip it and let the border-color change (from the base button rule) carry
+   the hover feedback instead. */
+.f-move button:hover {
+  transform: none;
+  box-shadow: none;
+}
+
+/* An existing field's type, shown but not editable. */
+.f-type-tag {
+  font-size: 0.78rem;
+  padding: 0.15rem 0.6rem;
+  border-radius: 999px;
+  background: #f3ebdd;
+  color: var(--ink-muted);
+}
+
+.field-list .confirm-row {
+  margin-bottom: 0.5rem;
 }
 
 .form h2 {

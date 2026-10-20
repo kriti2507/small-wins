@@ -4,6 +4,7 @@ import type { Topic, Entry } from "../types";
 import SummaryGraph from "./SummaryGraph";
 import TopicForm from "./TopicForm";
 import ConfirmRow from "./ConfirmRow";
+import ActionMenu from "./ActionMenu";
 import { buttonColorFor } from "../lib/palette";
 import { deleteTopic } from "../api/client";
 
@@ -20,8 +21,8 @@ interface Props {
   onChanged: () => void;
 }
 
-// Grid of per-topic summary boxes plus an "+ Add more" tile. Each box can be
-// edited in place or deleted.
+// Grid of per-topic summary boxes plus an "+ Add more" tile. Each box's ⋯
+// menu edits it in place or deletes it.
 export default function AspectGrid({ topicsData, onAddMore, onChanged }: Props) {
   const [editing, setEditing] = useState<string | null>(null);
   const [confirming, setConfirming] = useState<string | null>(null);
@@ -46,6 +47,7 @@ export default function AspectGrid({ topicsData, onAddMore, onChanged }: Props) 
             <TopicForm
               key={topic.slug}
               topic={topic}
+              entries={entries}
               onSaved={() => {
                 setEditing(null);
                 onChanged();
@@ -58,6 +60,20 @@ export default function AspectGrid({ topicsData, onAddMore, onChanged }: Props) 
         const count = entries.length;
         return (
           <div className="aspect-box" key={topic.slug}>
+            {confirming !== topic.slug && (
+              <ActionMenu
+                className="corner-menu"
+                label={`Actions for ${topic.name}`}
+                items={[
+                  { label: "Edit", onSelect: () => setEditing(topic.slug) },
+                  // The server refuses to delete the last topic (it would be
+                  // re-seeded), so don't offer it.
+                  ...(topicsData.length > 1
+                    ? [{ label: "Delete…", danger: true, onSelect: () => setConfirming(topic.slug) }]
+                    : []),
+                ]}
+              />
+            )}
             <h2>{topic.name}</h2>
             <div className="graph">
               <SummaryGraph topic={topic} entries={entries} colorIndex={colorIndex} />
@@ -74,29 +90,13 @@ export default function AspectGrid({ topicsData, onAddMore, onChanged }: Props) 
                 onCancel={() => setConfirming(null)}
               />
             ) : (
-              <div className="aspect-actions">
-                <Link
-                  className="btn primary"
-                  to={`/topic/${topic.slug}`}
-                  style={{ backgroundColor: tint, borderColor: tint }}
-                >
-                  Learn more
-                </Link>
-                <button type="button" className="small-action" onClick={() => setEditing(topic.slug)}>
-                  Edit
-                </button>
-                {/* The server refuses to delete the last topic (it would be
-                    re-seeded), so don't offer it. */}
-                {topicsData.length > 1 && (
-                  <button
-                    type="button"
-                    className="small-action danger"
-                    onClick={() => setConfirming(topic.slug)}
-                  >
-                    Delete
-                  </button>
-                )}
-              </div>
+              <Link
+                className="btn primary"
+                to={`/topic/${topic.slug}`}
+                style={{ backgroundColor: tint, borderColor: tint }}
+              >
+                Learn more
+              </Link>
             )}
           </div>
         );

@@ -30,15 +30,15 @@ def slugs(c):
 
 
 def add_run(c, title="Run"):
-    res = c.post("/api/topics/runs/entries", json={"date": "2026-10-01", "title": title})
+    res = c.post("/api/topics/workout/entries", json={"date": "2026-10-01", "title": title})
     assert res.status_code == 201
     return res.get_json()["id"]
 
 
 def test_each_user_lists_only_their_own_topics(client, other):
     assert client.post("/api/topics", json={"name": "Books"}).status_code == 201
-    assert slugs(client) == ["runs", "books"]
-    assert slugs(other) == ["runs"]
+    assert slugs(client) == ["workout", "journal", "books"]
+    assert slugs(other) == ["workout", "journal"]
 
 
 def test_two_users_can_have_the_same_topic(client, other):
@@ -71,14 +71,14 @@ def test_another_users_topic_is_not_found(client, other):
 
 def test_another_users_entry_is_not_found_and_stays_untouched(client, other):
     entry_id = add_run(client, "Mine")
-    url = f"/api/topics/runs/entries/{entry_id}"
+    url = f"/api/topics/workout/entries/{entry_id}"
     assert client.patch(url, json={"body": DOC}).status_code == 200
 
-    # other has its own "runs" topic, so these reach the entry lookup.
+    # other has its own "workout" topic, so these reach the entry lookup.
     assert other.get(url).status_code == 404
     assert other.patch(url, json={"title": "Hacked", "body": {"type": "doc"}}).status_code == 404
     assert other.delete(url).status_code == 404
-    assert other.get("/api/topics/runs/entries").get_json() == []
+    assert other.get("/api/topics/workout/entries").get_json() == []
 
     mine = client.get(url).get_json()
     assert mine["title"] == "Mine"
@@ -88,7 +88,7 @@ def test_another_users_entry_is_not_found_and_stays_untouched(client, other):
 def test_same_slug_and_entry_id_stay_separate(client, other):
     assert add_run(client, "Mine") == 1
     assert add_run(other, "Theirs") == 1
-    url = "/api/topics/runs/entries/1"
+    url = "/api/topics/workout/entries/1"
 
     mine_body = DOC
     theirs_body = {"type": "doc", "content": []}
@@ -126,11 +126,11 @@ def test_deleting_an_entry_never_touches_another_users_objects(client, other, mo
     # Pasting someone else's image path into your own entry...
     theirs = f"/api/images/users/{theirs_id}/theirs.jpg"
     mine = add_run(client)
-    assert client.patch(f"/api/topics/runs/entries/{mine}", json={"image": theirs}).status_code == 200
+    assert client.patch(f"/api/topics/workout/entries/{mine}", json={"image": theirs}).status_code == 200
     # ...neither lets you read it...
     assert client.get(theirs).status_code == 404
     # ...nor delete it.
-    assert client.delete(f"/api/topics/runs/entries/{mine}").status_code == 200
+    assert client.delete(f"/api/topics/workout/entries/{mine}").status_code == 200
     assert deleted == []
 
 

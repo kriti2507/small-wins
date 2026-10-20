@@ -47,7 +47,7 @@ def test_a_redeemed_grant_acts_as_its_user(db_anon_client):
 
     assert sign_bad_ext(db_anon_client, bearer(mine)).status_code == 400
     slugs = lambda cred: [t["slug"] for t in db_anon_client.get("/api/topics", headers=bearer(cred)).get_json()]  # noqa: E731
-    assert slugs(mine) == ["runs"]
+    assert slugs(mine) == ["workout", "journal"]
     assert slugs(theirs) == ["books"]
 
 
