@@ -85,6 +85,61 @@ def slugify(s):
     return re.sub(r"[^a-z0-9]+", "_", s.lower()).strip("_")
 
 
+FIELD_TYPES = ("text", "number", "pace")
+DIRECTIONS = ("higher", "lower", "none")
+
+
+def merge_fields(old, submitted):
+    """Validate an edited, ordered field list against a topic's current fields.
+
+    Items with a `key` are existing fields: label and direction may change,
+    the stored type may not. Items without one are new: they get a key from
+    their label that no current field uses, so a removed field's values can't
+    resurface under a new field. Existing keys left out are removed.
+    Returns (fields, removed_keys); raises ValueError with a user-facing
+    message on bad input."""
+    if not isinstance(submitted, list):
+        raise ValueError("Fields must be a list.")
+    by_key = {f["key"]: f for f in old}
+    taken = set(by_key)
+    seen = set()
+    fields = []
+    for f in submitted:
+        if not isinstance(f, dict):
+            raise ValueError("Invalid field.")
+        label = f.get("label")
+        label = label.strip() if isinstance(label, str) else ""
+        if not label:
+            raise ValueError("Every field needs a label.")
+        key = f.get("key")
+        if key is not None:
+            if key not in by_key:
+                raise ValueError("That field no longer exists.")
+            if key in seen:
+                raise ValueError("A field is listed twice.")
+            ftype = by_key[key]["type"]
+        else:
+            ftype = f.get("type", "number")
+            if ftype not in FIELD_TYPES:
+                raise ValueError("Invalid field type.")
+            base = slugify(label)
+            if not base:
+                raise ValueError(f"'{label}' needs at least one letter or number.")
+            key, n = base, 2
+            while key in taken:
+                key, n = f"{base}_{n}", n + 1
+        taken.add(key)
+        seen.add(key)
+        direction = f.get("direction", "none")
+        if ftype == "text":
+            direction = "none"
+        elif direction not in DIRECTIONS:
+            raise ValueError("Invalid scoring direction.")
+        fields.append({"key": key, "label": label, "type": ftype, "direction": direction})
+    removed = [k for k in by_key if k not in seen]
+    return fields, removed
+
+
 def valid_body(body):
     """A post body is a TipTap doc: {"type": "doc", "content": [...]}."""
     if not isinstance(body, dict) or body.get("type") != "doc":

@@ -943,3 +943,58 @@ def test_export_csv_includes_entries_fields_and_body(client):
     assert lines[0].endswith(",body")
     assert any("2026-07-09" in l and "Run" in l for l in lines[1:])
     assert "a caption" in res.get_data(as_text=True)
+
+
+# --- merge_fields -------------------------------------------------------------
+
+OLD_FIELDS = [
+    {"key": "title", "label": "Title", "type": "text", "direction": "none"},
+    {"key": "duration", "label": "Duration", "type": "number", "direction": "higher"},
+]
+
+
+def test_merge_fields_renames_reorders_and_keeps_stored_type():
+    fields, removed = app_module.merge_fields(OLD_FIELDS, [
+        {"key": "duration", "label": " Time ", "type": "text", "direction": "lower"},
+        {"key": "title", "label": "Name", "direction": "higher"},
+    ])
+    assert fields == [
+        {"key": "duration", "label": "Time", "type": "number", "direction": "lower"},
+        {"key": "title", "label": "Name", "type": "text", "direction": "none"},
+    ]
+    assert removed == []
+
+
+def test_merge_fields_adds_and_removes():
+    fields, removed = app_module.merge_fields(OLD_FIELDS, [
+        {"key": "title", "label": "Title"},
+        {"label": "Sets", "type": "number", "direction": "higher"},
+    ])
+    assert [f["key"] for f in fields] == ["title", "sets"]
+    assert fields[1] == {"key": "sets", "label": "Sets", "type": "number", "direction": "higher"}
+    assert removed == ["duration"]
+
+
+def test_merge_fields_never_reuses_an_existing_key():
+    fields, removed = app_module.merge_fields(OLD_FIELDS, [
+        {"key": "title", "label": "Title"},
+        {"label": "Duration", "type": "number", "direction": "higher"},
+        {"label": "Duration", "type": "pace", "direction": "lower"},
+    ])
+    assert [f["key"] for f in fields] == ["title", "duration_2", "duration_3"]
+    assert removed == ["duration"]
+
+
+@pytest.mark.parametrize("submitted", [
+    "not a list",
+    [{"key": "nope", "label": "X"}],
+    [{"key": "title", "label": "A"}, {"key": "title", "label": "B"}],
+    [{"key": "title", "label": "   "}],
+    [{"label": "When", "type": "date"}],
+    [{"key": "duration", "label": "D", "direction": "sideways"}],
+    [{"label": "!!!", "type": "text"}],
+    ["title"],
+])
+def test_merge_fields_rejects_bad_input(submitted):
+    with pytest.raises(ValueError):
+        app_module.merge_fields(OLD_FIELDS, submitted)
