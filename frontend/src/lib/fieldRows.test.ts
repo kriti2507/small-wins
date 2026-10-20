@@ -15,7 +15,13 @@ const topic: Topic = {
 
 describe("rowsFromTopic", () => {
   it("copies the topic's fields, keys included", () => {
-    expect(rowsFromTopic(topic)).toEqual(topic.fields);
+    const rows = rowsFromTopic(topic);
+    expect(rows.map(({ id: _id, ...rest }) => rest)).toEqual(topic.fields);
+  });
+
+  it("gives each row a distinct id", () => {
+    const rows = rowsFromTopic(topic);
+    expect(new Set(rows.map((r) => r.id)).size).toBe(rows.length);
   });
 });
 
@@ -48,10 +54,16 @@ describe("countWithValue", () => {
 describe("fieldsPayload", () => {
   it("sends keys for existing rows, types for new ones, and drops blank new rows", () => {
     const rows = [
-      { key: "duration", label: " Time ", type: "number" as const, direction: "lower" as const },
-      { label: "Sets", type: "number" as const, direction: "higher" as const },
+      {
+        id: 1,
+        key: "duration",
+        label: " Time ",
+        type: "number" as const,
+        direction: "lower" as const,
+      },
+      { id: 2, label: "Sets", type: "number" as const, direction: "higher" as const },
       emptyRow(),
-      { key: "title", label: "", type: "text" as const, direction: "none" as const },
+      { id: 4, key: "title", label: "", type: "text" as const, direction: "none" as const },
     ];
     expect(fieldsPayload(rows)).toEqual([
       { key: "duration", label: "Time", direction: "lower" },

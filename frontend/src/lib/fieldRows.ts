@@ -2,7 +2,10 @@ import type { Direction, Entry, FieldType, Topic } from "../types";
 
 // One row of TopicForm's field list. `key` is set for fields the topic
 // already has (their type is locked) and absent for rows added in the form.
+// `id` is a client-only identity for React keys and confirm-row tracking
+// across reorders — it's never sent to the server.
 export interface FieldRow {
+  id: number;
   key?: string;
   label: string;
   type: FieldType;
@@ -15,10 +18,24 @@ export type FieldPayload =
   | { key: string; label: string; direction: Direction }
   | { label: string; type: FieldType; direction: Direction };
 
-export const emptyRow = (): FieldRow => ({ label: "", type: "number", direction: "higher" });
+let nextId = 0;
+const newId = () => ++nextId;
+
+export const emptyRow = (): FieldRow => ({
+  id: newId(),
+  label: "",
+  type: "number",
+  direction: "higher",
+});
 
 export function rowsFromTopic(topic: Topic): FieldRow[] {
-  return topic.fields.map(({ key, label, type, direction }) => ({ key, label, type, direction }));
+  return topic.fields.map(({ key, label, type, direction }) => ({
+    id: newId(),
+    key,
+    label,
+    type,
+    direction,
+  }));
 }
 
 // Swap row i with its neighbour; the same list if that would leave the ends.

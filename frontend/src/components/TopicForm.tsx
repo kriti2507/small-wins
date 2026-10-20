@@ -30,7 +30,8 @@ export default function TopicForm({ topic, entries = [], onSaved, onCancel }: Pr
   const [color, setColor] = useState<string>(topic?.color ?? PALETTE_ORDER[0]);
   const [layout, setLayout] = useState<string>(topic?.layout ?? "photo-top");
   const [rows, setRows] = useState<FieldRow[]>(topic ? rowsFromTopic(topic) : [emptyRow()]);
-  // Index of the row whose removal is awaiting confirmation.
+  // Id of the row whose removal is awaiting confirmation. Tracked by id (not
+  // index) so reordering the rows doesn't have to disturb it.
   const [confirming, setConfirming] = useState<number | null>(null);
 
   function updateRow(i: number, patch: Partial<FieldRow>) {
@@ -43,19 +44,17 @@ export default function TopicForm({ topic, entries = [], onSaved, onCancel }: Pr
   }
 
   function move(i: number, delta: -1 | 1) {
-    setConfirming(null);
     setRows((rs) => moveRow(rs, i, delta));
   }
 
-  function removeRow(i: number) {
+  function removeRow(id: number) {
     setConfirming(null);
-    setRows((rs) => rs.filter((_, j) => j !== i));
+    setRows((rs) => rs.filter((r) => r.id !== id));
   }
 
-  function askRemove(i: number) {
-    const key = rows[i].key;
-    if (key !== undefined && countWithValue(entries, key) > 0) setConfirming(i);
-    else removeRow(i);
+  function askRemove(row: FieldRow) {
+    if (row.key !== undefined && countWithValue(entries, row.key) > 0) setConfirming(row.id);
+    else removeRow(row.id);
   }
 
   function removeMessage(row: FieldRow) {
@@ -79,7 +78,7 @@ export default function TopicForm({ topic, entries = [], onSaved, onCancel }: Pr
         .catch((err) => alert(err.message || "Error"));
       return;
     }
-    addTopic({ name, color, layout, fields: fields.map((f) => ({ ...f, type: "type" in f ? f.type : "number" })) })
+    addTopic({ name, color, layout, fields })
       .then(() => {
         setName("");
         setColor(PALETTE_ORDER[0]);
@@ -91,7 +90,7 @@ export default function TopicForm({ topic, entries = [], onSaved, onCancel }: Pr
   }
 
   return (
-    <form className="form" onSubmit={handleSubmit}>
+    <form className="form topic-form" onSubmit={handleSubmit}>
       <h2>{topic ? "Edit aspect" : "New aspect"}</h2>
       <label>
         Name
@@ -120,25 +119,26 @@ export default function TopicForm({ topic, entries = [], onSaved, onCancel }: Pr
 
       <div className="field-list">
         <span className="field-list-label">Fields</span>
-        {rows.map((row, i) =>
-          confirming === i ? (
+        {rows.map((row, i) => {
+          const rowName = row.label.trim() || `field ${i + 1}`;
+          return confirming === row.id ? (
             <ConfirmRow
-              key={i}
+              key={row.id}
               message={removeMessage(row)}
               confirmLabel="Remove"
               cancelLabel="Keep"
               disabled={false}
               busy={false}
               busyLabel="Removing…"
-              onConfirm={() => removeRow(i)}
+              onConfirm={() => removeRow(row.id)}
               onCancel={() => setConfirming(null)}
             />
           ) : (
-            <div className="field-row" key={i}>
+            <div className="field-row" key={row.id}>
               <div className="f-move">
                 <button
                   type="button"
-                  aria-label={`Move ${row.label || "field"} up`}
+                  aria-label={`Move ${rowName} up`}
                   disabled={i === 0}
                   onClick={() => move(i, -1)}
                 >
@@ -146,7 +146,7 @@ export default function TopicForm({ topic, entries = [], onSaved, onCancel }: Pr
                 </button>
                 <button
                   type="button"
-                  aria-label={`Move ${row.label || "field"} down`}
+                  aria-label={`Move ${rowName} down`}
                   disabled={i === rows.length - 1}
                   onClick={() => move(i, 1)}
                 >
@@ -188,14 +188,14 @@ export default function TopicForm({ topic, entries = [], onSaved, onCancel }: Pr
               <button
                 type="button"
                 className="f-remove"
-                aria-label={`Remove ${row.label || "field"}`}
-                onClick={() => askRemove(i)}
+                aria-label={`Remove ${rowName}`}
+                onClick={() => askRemove(row)}
               >
                 ✕
               </button>
             </div>
-          ),
-        )}
+          );
+        })}
       </div>
       <button type="button" onClick={() => setRows((rs) => [...rs, emptyRow()])}>
         + Add field

@@ -46,6 +46,7 @@ export default function AspectGrid({ topicsData, onAddMore, onChanged }: Props) 
             <TopicForm
               key={topic.slug}
               topic={topic}
+              entries={entries}
               onSaved={() => {
                 setEditing(null);
                 onChanged();

@@ -772,10 +772,10 @@ button.danger:hover {
   box-shadow: 0 2px 10px -4px rgba(var(--shadow-tint), 0.12);
 }
 
-/* A field row now carries reorder buttons and (for existing fields) a type
-   tag alongside the label and direction selects — 420px crowds that, so
-   widen only forms that actually have a field list. */
-.form:has(.field-list) {
+/* A field row carries reorder buttons and (for existing fields) a type tag
+   alongside the label and direction selects — 420px crowds that, so the
+   topic form (create and edit) gets more room than a plain .form. */
+.topic-form {
   max-width: 560px;
 }
 
@@ -858,7 +858,7 @@ a.back:hover {
   box-shadow: 0 0 0 2px var(--card) inset;
 }
 
-/* Create-topic field rows */
+/* Topic field rows (create and edit) */
 .field-row {
   display: flex;
   gap: 0.5rem;
@@ -900,10 +900,20 @@ a.back:hover {
 }
 
 .f-move button {
-  padding: 0 0.4rem;
+  min-width: 24px;
+  min-height: 24px;
+  padding: 0;
   font-size: 0.6rem;
-  line-height: 1.5;
+  line-height: 1;
   border-radius: 6px;
+}
+
+/* These are small enough that the usual lift-on-hover looks like a jitter;
+   skip it and let the border-color change (from the base button rule) carry
+   the hover feedback instead. */
+.f-move button:hover {
+  transform: none;
+  box-shadow: none;
 }
 
 /* An existing field's type, shown but not editable. */

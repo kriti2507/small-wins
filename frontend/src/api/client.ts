@@ -59,7 +59,7 @@ export function addTopic(payload: {
   name: string;
   color: string | null;
   layout: string;
-  fields: { label: string; type: string; direction: string }[];
+  fields: FieldPayload[];
 }): Promise<Topic> {
   return fetch("/api/topics", {
     method: "POST",
