@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import {
-  readJson, httpErrorMessage, uploadImage, listGrants, revokeGrant, deleteAccount,
+  readJson, httpErrorMessage, uploadImage, listGrants, revokeGrant, deleteAccount, markTipsSeen,
 } from "./client";
 
 vi.mock("../lib/image", () => ({
@@ -221,5 +221,33 @@ describe("deleteAccount", () => {
   it("rejects when the server refuses, so the UI can say so", async () => {
     reply = new Response(JSON.stringify({ error: "Sign in to continue." }), { status: 401 });
     await expect(deleteAccount()).rejects.toThrow("Sign in to continue.");
+  });
+});
+
+describe("markTipsSeen", () => {
+  let reply: Response;
+  const calls: { url: string; init?: RequestInit }[] = [];
+
+  beforeEach(() => {
+    calls.length = 0;
+    vi.stubGlobal("fetch", vi.fn(async (url: string, init?: RequestInit) => {
+      calls.push({ url, init });
+      return reply;
+    }));
+  });
+  afterEach(() => vi.unstubAllGlobals());
+
+  it("posts the tip ids and returns the updated user", async () => {
+    const user = { id: 1, email: "a@b.c", name: null, avatar_url: null, tips_seen: ["log"] };
+    reply = new Response(JSON.stringify({ user }), { status: 200 });
+    await expect(markTipsSeen(["log"])).resolves.toEqual({ user });
+    expect(calls[0]).toEqual({
+      url: "/api/tips/seen",
+      init: {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ tips: ["log"] }),
+      },
+    });
   });
 });

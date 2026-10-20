@@ -194,6 +194,7 @@ export interface User {
   email: string;
   name: string | null;
   avatar_url: string | null;
+  tips_seen: string[]; // onboarding tips already dismissed (see lib/tips.ts)
 }
 
 /** The signed-in user, or null when signed out. Never redirects: the
@@ -202,6 +203,15 @@ export async function getMe(): Promise<User | null> {
   const res = await fetch("/api/auth/me");
   if (res.status === 401) return null;
   return (await readJson<{ user: User }>(res)).user;
+}
+
+/** Record onboarding tips as dismissed; resolves to the updated user. */
+export function markTipsSeen(tips: string[]): Promise<{ user: User }> {
+  return fetch("/api/tips/seen", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ tips }),
+  }).then((r) => readJson<{ user: User }>(r));
 }
 
 /** Delete the signed-in user's account, data and images, and sign out. */

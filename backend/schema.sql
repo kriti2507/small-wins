@@ -4,6 +4,8 @@ create table users (
   email       text not null,
   name        text,
   avatar_url  text,
+  -- Onboarding tips this person has dismissed (see frontend/src/lib/tips.ts).
+  tips_seen   text[] not null default '{}',
   created_at  timestamptz not null default now()
 );
 

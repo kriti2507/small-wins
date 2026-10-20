@@ -1,25 +1,19 @@
 import type { Grant } from "../types";
 import ConfirmRow from "./ConfirmRow";
-import { appName, connectorUrl, formatDay, lastUsedLabel } from "../lib/grants";
+import { appName, formatDay, lastUsedLabel } from "../lib/grants";
 
 interface Props {
   grants: Grant[];
   confirming: number | null; // id of the row asking "are you sure?"
   busy: boolean; // a revoke is in flight
-  origin: string; // this site's origin, for the empty-state connector URL
   onAsk: (id: number) => void;
   onConfirm: (id: number) => void;
   onCancel: () => void;
 }
 
-export default function GrantList({ grants, confirming, busy, origin, onAsk, onConfirm, onCancel }: Props) {
+export default function GrantList({ grants, confirming, busy, onAsk, onConfirm, onCancel }: Props) {
   if (grants.length === 0) {
-    return (
-      <p className="empty">
-        No apps are connected. To connect one, add a custom connector in Claude
-        (or another MCP app) with the URL <code>{connectorUrl(origin)}</code>.
-      </p>
-    );
+    return <p className="empty">No apps are connected yet.</p>;
   }
   return (
     <ul className="grant-list">

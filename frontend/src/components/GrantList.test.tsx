@@ -14,7 +14,7 @@ const noop = () => {};
 
 function render(props: Partial<Parameters<typeof GrantList>[0]> = {}) {
   return renderToStaticMarkup(
-    <GrantList grants={GRANTS} confirming={null} busy={false} origin="https://sw.example"
+    <GrantList grants={GRANTS} confirming={null} busy={false}
       onAsk={noop} onConfirm={noop} onCancel={noop} {...props} />,
   );
 }
@@ -38,9 +38,9 @@ describe("GrantList", () => {
     expect(html).toContain(">Keep<");
   });
 
-  it("explains how to connect an app when there are none", () => {
+  it("says so when no apps are connected", () => {
     const html = render({ grants: [] });
-    expect(html).toContain("No apps are connected");
-    expect(html).toContain("https://sw.example/mcp");
+    expect(html).toContain("No apps are connected yet.");
+    expect(html).not.toContain("/mcp"); // the page shows the URL above the list
   });
 });
