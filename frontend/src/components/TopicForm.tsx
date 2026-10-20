@@ -29,7 +29,7 @@ export default function TopicForm({ topic, entries = [], onSaved, onCancel }: Pr
   const [name, setName] = useState(topic?.name ?? "");
   const [color, setColor] = useState<string>(topic?.color ?? PALETTE_ORDER[0]);
   const [layout, setLayout] = useState<string>(topic?.layout ?? "photo-top");
-  const [rows, setRows] = useState<FieldRow[]>(topic ? rowsFromTopic(topic) : [emptyRow()]);
+  const [rows, setRows] = useState<FieldRow[]>(() => (topic ? rowsFromTopic(topic) : [emptyRow()]));
   // Id of the row whose removal is awaiting confirmation. Tracked by id (not
   // index) so reordering the rows doesn't have to disturb it.
   const [confirming, setConfirming] = useState<number | null>(null);
