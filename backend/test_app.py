@@ -451,6 +451,51 @@ def test_add_duplicate_topic_conflicts(client):
     assert res.status_code == 409
 
 
+def test_add_topic_refuses_once_the_topic_limit_is_reached(client, monkeypatch):
+    monkeypatch.setattr(app_module, "MAX_TOPICS_PER_USER", 2)  # "runs" + one more
+    assert client.post("/api/topics", json={"name": "Books"}).status_code == 201
+
+    res = client.post("/api/topics", json={"name": "Films"})
+
+    assert res.status_code == 403
+    assert res.get_json()["error"] == "You've reached the limit of 2 topics."
+    assert [t["slug"] for t in client.get("/api/topics").get_json()] == ["runs", "books"]
+
+
+def test_add_topic_rejects_an_oversized_topic(client):
+    res = client.post("/api/topics", json={
+        "name": "Books", "fields": [{"label": "x" * 25_000, "type": "text"}],
+    })
+    assert res.status_code == 400
+    assert [t["slug"] for t in client.get("/api/topics").get_json()] == ["runs"]
+
+
+def test_add_entry_refuses_once_the_entry_limit_is_reached(client, monkeypatch):
+    monkeypatch.setattr(app_module, "MAX_ENTRIES_PER_USER", 2)
+    client.post("/api/topics", json={"name": "Books"})
+    make_entry(client)
+    # The limit counts entries across every topic, not per topic.
+    assert client.post("/api/topics/books/entries", json={}).status_code == 201
+
+    res = client.post("/api/topics/runs/entries", json={"title": "Third"})
+
+    assert res.status_code == 403
+    assert res.get_json()["error"] == "You've reached the limit of 2 entries."
+    assert len(client.get("/api/topics/runs/entries").get_json()) == 1
+
+
+def test_add_and_patch_entry_reject_oversized_field_values(client):
+    big = "x" * 110_000
+    res = client.post("/api/topics/runs/entries", json={"title": big})
+    assert res.status_code == 400
+    assert client.get("/api/topics/runs/entries").get_json() == []
+
+    entry_id = make_entry(client)
+    res = client.patch(f"/api/topics/runs/entries/{entry_id}", json={"title": big})
+    assert res.status_code == 400
+    assert client.get(f"/api/topics/runs/entries/{entry_id}").get_json()["title"] == "Run"
+
+
 def test_set_topic_layout(client):
     res = client.patch("/api/topics/runs", json={"layout": "thumbnail"})
     assert res.status_code == 200
@@ -468,6 +513,7 @@ def sign_ok(monkeypatch, seen=None):
             seen.append(name)
         return f"https://proj.supabase.co/storage/v1/object/upload/sign/uploads/{name}?token=t"
     monkeypatch.setattr(app_module.storage, "signed_upload_url", fake)
+    monkeypatch.setattr(app_module.storage, "count_user_images", lambda user_id, stop_at: 0)
 
 
 def test_sign_upload_mints_a_key_under_the_users_prefix(no_db_client, monkeypatch):
@@ -519,11 +565,44 @@ def test_sign_upload_reports_thumbnail_signing_failure_as_json_502(no_db_client,
             raise urllib.error.HTTPError("u", 500, "err", {}, BytesIO(b"down"))
         return f"https://proj.supabase.co/storage/v1/object/upload/sign/uploads/{name}?token=t"
     monkeypatch.setattr(app_module.storage, "signed_upload_url", fake)
+    monkeypatch.setattr(app_module.storage, "count_user_images", lambda user_id, stop_at: 0)
 
     res = no_db_client.post("/api/uploads/sign", json={"ext": "jpg", "thumb": True})
 
     assert res.status_code == 502
     assert res.get_json()["error"]
+
+
+def test_sign_upload_refuses_once_the_image_limit_is_reached(no_db_client, monkeypatch):
+    keys, counted = [], []
+    sign_ok(monkeypatch, keys)
+
+    def full(user_id, stop_at):
+        counted.append((user_id, stop_at))
+        return stop_at
+    monkeypatch.setattr(app_module.storage, "count_user_images", full)
+
+    res = no_db_client.post("/api/uploads/sign", json={"ext": "png"})
+
+    assert res.status_code == 403
+    assert res.get_json()["error"] == "You've reached the limit of 2,000 images."
+    assert counted == [(1, app_module.MAX_IMAGES_PER_USER)]
+    assert keys == []  # nothing signed
+
+
+def test_sign_upload_reports_a_failed_image_count_as_json_502(no_db_client, monkeypatch):
+    keys = []
+    sign_ok(monkeypatch, keys)
+
+    def boom(user_id, stop_at):
+        raise urllib.error.HTTPError("u", 500, "err", {}, BytesIO(b"down"))
+    monkeypatch.setattr(app_module.storage, "count_user_images", boom)
+
+    res = no_db_client.post("/api/uploads/sign", json={"ext": "png"})
+
+    assert res.status_code == 502
+    assert res.get_json()["error"]
+    assert keys == []
 
 
 def test_sign_upload_ignores_a_client_supplied_key(no_db_client, monkeypatch):
@@ -684,6 +763,7 @@ def test_sign_upload_reports_storage_failure_as_json_not_html(no_db_client, monk
     def boom(name, expires_in=None):
         raise urllib.error.HTTPError("u", 400, "Bad Request", {}, BytesIO(b"nope"))
     monkeypatch.setattr(app_module.storage, "signed_upload_url", boom)
+    monkeypatch.setattr(app_module.storage, "count_user_images", lambda user_id, stop_at: 0)
 
     res = no_db_client.post("/api/uploads/sign", json={"ext": "png"})
 
@@ -776,5 +856,6 @@ def test_login_required_exposes_the_user_on_g(no_db_client, monkeypatch):
         seen.append(app_module.g.user_id)
         raise RuntimeError("stop here")  # the route turns this into a 502
     monkeypatch.setattr(app_module.storage, "signed_upload_url", spy)
+    monkeypatch.setattr(app_module.storage, "count_user_images", lambda user_id, stop_at: 0)
     no_db_client.post("/api/uploads/sign", json={"ext": "png"})
     assert seen == [1]  # no_db_client's session user_id

@@ -1,4 +1,4 @@
-"""Google sign-in, the invite allowlist, and the login_required guard.
+"""Google sign-in and the login_required guard.
 
 Settings are read from the environment when used, not at import, so tests
 can flip them with monkeypatch.setenv.
@@ -19,17 +19,6 @@ GOOGLE_METADATA_URL = "https://accounts.google.com/.well-known/openid-configurat
 
 bp = Blueprint("auth", __name__)
 oauth = OAuth()
-
-
-def is_allowed(email):
-    """The one place that decides who may sign in. To open signup to any
-    Google account later, change only this function."""
-    allowed = {
-        e.strip().lower()
-        for e in os.environ.get("ALLOWED_EMAILS", "").split(",")
-        if e.strip()
-    }
-    return bool(email) and email.strip().lower() in allowed
 
 
 def safe_next(value):
@@ -140,8 +129,9 @@ def google_callback():
         return redirect("/login?error=failed")
     info = token.get("userinfo") or {}
     email = (info.get("email") or "").strip().lower()
-    if not info.get("email_verified") or not is_allowed(email):
+    # Any Google account may sign in, as long as Google has verified its email.
+    if not info.get("email_verified") or not email:
         session.clear()
-        return redirect("/login?error=not_invited")
+        return redirect("/login?error=unverified")
     user = db.upsert_user(info["sub"], email, info.get("name"), info.get("picture"))
     return _finish_sign_in(user)

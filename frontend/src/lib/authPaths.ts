@@ -27,8 +27,8 @@ export function googleSignInHref(next: string): string {
 /** The message for /login?error=..., set by the backend's Google callback. */
 export function loginErrorMessage(code: string | null): string | null {
   switch (code) {
-    case "not_invited":
-      return "This Google account isn't invited to Small Wins.";
+    case "unverified":
+      return "This Google account's email isn't verified.";
     case "failed":
       return "Sign-in didn't finish. Try again.";
     default:

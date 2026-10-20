@@ -180,25 +180,42 @@ def object_name_for(url, user_id):
     return user_key(url[len(IMAGE_PATH_PREFIX):], user_id)
 
 
-def list_root_objects():
-    """Names of the objects at the bucket root (not under any folder). Used
-    by the migration script's --delete-old."""
+def _list_pages(prefix):
+    """Yield each page (up to 1000) of object names directly under `prefix`.
+    Folders (like users/) come back with a null id and are skipped."""
     base, _key, bucket = _cfg()
-    names, offset = [], 0
+    offset = 0
     while True:
         req = _authed(urllib.request.Request(
             f"{base}/storage/v1/object/list/{bucket}",
-            data=json.dumps({"prefix": "", "limit": 1000, "offset": offset}).encode(),
+            data=json.dumps({"prefix": prefix, "limit": 1000, "offset": offset}).encode(),
             method="POST",
         ))
         req.add_header("Content-Type", "application/json")
         with _open(req) as resp:
             page = json.loads(resp.read())
-        # Folders (like users/) come back with a null id.
-        names += [o["name"] for o in page if o.get("id")]
+        yield [o["name"] for o in page if o.get("id")]
         if len(page) < 1000:
-            return names
+            return
         offset += 1000
+
+
+def list_root_objects():
+    """Names of the objects at the bucket root (not under any folder). Used
+    by the migration script's --delete-old."""
+    return [name for page in _list_pages("") for name in page]
+
+
+def count_user_images(user_id, stop_at):
+    """How many images user_id has stored, not counting thumbnails. Stops
+    listing once the count reaches stop_at, so a full account costs one page
+    rather than all of them."""
+    count = 0
+    for page in _list_pages(f"users/{user_id}/"):
+        count += sum(1 for name in page if not name.endswith(".thumb"))
+        if count >= stop_at:
+            break
+    return count
 
 
 def delete_object(name):

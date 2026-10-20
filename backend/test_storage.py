@@ -284,3 +284,31 @@ def test_list_root_objects_skips_folders(monkeypatch):
     assert storage.list_root_objects() == ["a.jpg"]
     assert seen["url"] == "https://proj.supabase.co/storage/v1/object/list/uploads"
     assert b'"prefix": ""' in seen["data"]
+
+
+def test_count_user_images_skips_thumbnails_and_lists_only_their_prefix(monkeypatch):
+    seen = []
+
+    def fake_urlopen(req):
+        seen.append(req.data)
+        return FakeResp(b'[{"name": "a.jpg", "id": "1"}, {"name": "a.thumb", "id": "2"},'
+                        b' {"name": "b.gif", "id": "3"}]')
+
+    monkeypatch.setattr(storage.urllib.request, "urlopen", fake_urlopen)
+    assert storage.count_user_images(7, stop_at=100) == 2
+    assert len(seen) == 1
+    assert b'"prefix": "users/7/"' in seen[0]
+
+
+def test_count_user_images_pages_until_it_reaches_stop_at(monkeypatch):
+    import json
+    offsets = []
+    full_page = json.dumps([{"name": f"{i}.jpg", "id": str(i)} for i in range(1000)]).encode()
+
+    def fake_urlopen(req):
+        offsets.append(json.loads(req.data)["offset"])
+        return FakeResp(full_page)
+
+    monkeypatch.setattr(storage.urllib.request, "urlopen", fake_urlopen)
+    assert storage.count_user_images(7, stop_at=1500) == 2000
+    assert offsets == [0, 1000]  # stopped without fetching a third page

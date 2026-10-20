@@ -21,8 +21,9 @@ Supabase (Postgres + Storage). Do the one-time setup once, then deploys are
 
 1. Google Cloud Console → **APIs & Services → OAuth consent screen**: user type
    **External**, app name `Small Wins`, your email as support/developer
-   contact. Leave it in **Testing** and add your Google account under
-   **Test users** (Testing allows up to 100 listed users).
+   contact. Then **Audience → Publish app** so it's **In production**: in
+   Testing, only listed Test users (100 at most) can sign in. The app asks
+   only for `openid email profile`, which need no Google review.
 2. **Credentials → Create credentials → OAuth client ID** → *Web application*.
    Authorized redirect URIs (exact; Google allows no wildcards, so preview
    deployments can't sign in):
@@ -46,7 +47,6 @@ In the Vercel project → Settings → Environment Variables, set:
 | `SUPABASE_BUCKET` | `uploads` |
 | `GOOGLE_CLIENT_ID` | from step 2 |
 | `GOOGLE_CLIENT_SECRET` | from step 2 |
-| `ALLOWED_EMAILS` | comma-separated emails allowed to sign in, e.g. `you@gmail.com` |
 | `SECRET_KEY` | from step 2 |
 | `TRUST_PROXY` | `1` |
 
@@ -60,7 +60,7 @@ vercel --prod
 
 Verify: `curl -s -o /dev/null -w "%{http_code}\n" https://yourdomain/api/topics`
 → `401`. Open the site → you land on the sign-in page → **Sign in with Google**
-→ your topics. A Google account not in `ALLOWED_EMAILS` sees "isn't invited".
+→ your topics.
 
 ## 5. Import the original data (optional)
 
@@ -181,19 +181,25 @@ Regenerate `SECRET_KEY`, update it in Vercel, redeploy. Every browser session
 ends. To also disconnect MCP apps, use the kill switch above (rotate
 `MCP_TOKEN_SECRET` and `delete from mcp_grants;`).
 
-## Inviting someone
+## Who can sign in
 
-Add their Google email to `ALLOWED_EMAILS` (and, while the consent screen is in
-Testing, to its **Test users**), redeploy. Each new user starts with a default
-"Runs" topic and sees only their own data. They see and revoke their own
-connected MCP apps on the Connected apps page (`/apps`) — nobody else can.
+Anyone with a Google account whose email Google has verified. Each new user
+starts with a default "Runs" topic and sees only their own data. They see and
+revoke their own connected MCP apps on the Connected apps page (`/apps`) —
+nobody else can.
 
-- Removing someone from `ALLOWED_EMAILS` doesn't end their existing session
-  (cookies last up to 30 days) or MCP connection — they keep working, still
-  scoped to only their own data. To cut them off immediately, rotate
-  `SECRET_KEY` (ends every browser session) and run
-  `delete from mcp_grants where user_id = <id>;` in the Supabase SQL editor
-  (disconnects only their apps).
+To stop one account from filling the database or bucket, each user is capped
+(constants at the top of `backend/app.py`): 50 topics, 5,000 entries, 2,000
+images, 100 KB of field values per entry and 1 MB per post body. Hitting a cap
+shows "You've reached the limit of …". The image count lists the user's
+storage folder on each upload, so uploads abandoned before saving count too;
+deleting entries frees their images.
+
+To remove someone: `delete from users where id = <id>;` in the Supabase SQL
+editor deletes their account, data and MCP apps (their session ends on its
+next `/api/auth/me`). Their images stay in the bucket under `users/<id>/`
+until you delete that folder. Nothing yet stops them signing in again as a
+new user.
 
 ## Local development
 
@@ -208,7 +214,6 @@ production's keys or touches its data.
    - `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` — same OAuth client as
      production
    - `SECRET_KEY` — a new one, not production's
-   - `ALLOWED_EMAILS` — your Google email
 3. Add `http://localhost:5173/api/auth/google/callback` to the OAuth client's
    authorized redirect URIs.
 4. Run Flask (`.venv/bin/python backend/app.py`, port 5000) and Vite (`npm run

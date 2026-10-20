@@ -63,15 +63,9 @@ def app_ctx(test_db):
 
 
 @pytest.fixture()
-def anon_client(monkeypatch):
-    """No session and no database: for requests that end before any query.
-
-    Clears auth settings that backend/.env may have loaded, so the local
-    config can't change test results.
-    """
+def anon_client():
+    """No session and no database: for requests that end before any query."""
     import app
-    for name in ("ALLOWED_EMAILS",):
-        monkeypatch.delenv(name, raising=False)
     app.app.config["TESTING"] = True
     return app.app.test_client()
 

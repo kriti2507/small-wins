@@ -107,6 +107,14 @@ def _flatten(row):
     return entry
 
 
+def count_entries(user_id):
+    """All of a user's entries, across every topic."""
+    conn = get_conn()
+    return conn.execute(
+        "select count(*) as c from entries where user_id=%s", (user_id,)
+    ).fetchone()["c"]
+
+
 def next_entry_id(user_id, slug):
     conn = get_conn()
     return conn.execute(
