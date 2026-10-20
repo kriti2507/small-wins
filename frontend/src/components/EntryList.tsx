@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import type { Topic, Entry } from "../types";
 import { tileModel } from "../lib/tile";
 import { hasPost } from "../lib/post";
@@ -7,6 +7,7 @@ import { rampFor } from "../lib/palette";
 import { thumbSrc } from "../lib/image";
 import { deleteEntry } from "../api/client";
 import ConfirmRow from "./ConfirmRow";
+import ActionMenu from "./ActionMenu";
 
 interface Props {
   topic: Topic;
@@ -17,8 +18,9 @@ interface Props {
 
 // Entries newest-first, rendered as tiles. Layout follows the topic's setting;
 // each tile shows its uploaded photo or a topic-color block with the initial.
-// The whole tile links to the entry; Edit/Delete sit above that link.
+// The whole tile links to the entry; its ⋯ menu sits above that link.
 export default function EntryList({ topic, entries, colorIndex, onDeleted }: Props) {
+  const navigate = useNavigate();
   const [confirming, setConfirming] = useState<number | null>(null);
   const [deleting, setDeleting] = useState(false);
   const ordered = [...entries].sort((a, b) => (a.date < b.date ? 1 : -1));
@@ -45,6 +47,14 @@ export default function EntryList({ topic, entries, colorIndex, onDeleted }: Pro
         return (
           <div className={`tile ${layout}`} key={entry.id}>
             <Link className="tile-link" to={href} aria-label={t.heading} />
+            <ActionMenu
+              className="corner-menu"
+              label={`Actions for ${t.heading}`}
+              items={[
+                { label: "Edit", onSelect: () => navigate(`${href}?edit=1`) },
+                { label: "Delete…", danger: true, onSelect: () => setConfirming(entry.id) },
+              ]}
+            />
             <div className="photo" style={{ background: gradient }}>
               <span className="initial">{t.initial}</span>
               {t.image && (
@@ -68,8 +78,8 @@ export default function EntryList({ topic, entries, colorIndex, onDeleted }: Pro
                 )}
               </h4>
               <span className="meta">{t.meta}</span>
-              <div className="tile-actions">
-                {confirming === entry.id ? (
+              {confirming === entry.id && (
+                <div className="tile-actions">
                   <ConfirmRow
                     message="Delete this entry?"
                     confirmLabel="Delete"
@@ -80,21 +90,8 @@ export default function EntryList({ topic, entries, colorIndex, onDeleted }: Pro
                     onConfirm={() => remove(entry.id)}
                     onCancel={() => setConfirming(null)}
                   />
-                ) : (
-                  <>
-                    <Link className="btn small-action" to={`${href}?edit=1`}>
-                      Edit
-                    </Link>
-                    <button
-                      type="button"
-                      className="small-action danger"
-                      onClick={() => setConfirming(entry.id)}
-                    >
-                      Delete
-                    </button>
-                  </>
-                )}
-              </div>
+                </div>
+              )}
             </div>
           </div>
         );

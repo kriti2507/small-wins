@@ -715,13 +715,19 @@ button.danger:hover {
     0 18px 32px -14px rgba(var(--shadow-tint), 0.35);
 }
 
-/* The tile is a div, not a link, so it can hold Edit/Delete buttons. This
-   invisible link covers the whole tile; the actions row sits above it. */
+/* The tile is a div, not a link, so it can hold its ⋯ menu and delete
+   confirmation. This invisible link covers the whole tile; those sit above it. */
 .tile-link {
   position: absolute;
   inset: 0;
   z-index: 1;
   border-radius: 4px;
+}
+
+/* Inside the polaroid's white border, over the photo's corner. */
+.tile .corner-menu {
+  top: 16px;
+  right: 16px;
 }
 
 .tile-actions {
@@ -834,7 +840,8 @@ button.danger:hover {
 
 .tile.thumbnail .body {
   flex: 1;
-  padding: 0.1rem 0;
+  /* Right padding keeps the heading clear of the corner ⋯ menu. */
+  padding: 0.1rem 2rem 0.1rem 0;
 }
 
 /* Add-entry form */
