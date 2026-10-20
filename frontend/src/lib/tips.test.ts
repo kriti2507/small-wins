@@ -58,6 +58,11 @@ describe("placeBubble", () => {
     const anchor = { top: 10, bottom: 50, left: 940, width: 50 }; // centre 965
     const p = placeBubble(anchor, bubble, viewport);
     expect(p.left).toBe(1000 - 300 - 8);
-    expect(p.arrowX).toBe(300 - 16); // clamped away from the rounded corner
+    expect(p.arrowX).toBe(965 - 692); // still at the anchor's centre
+  });
+
+  it("keeps the arrow off the rounded corner at the very edge", () => {
+    const anchor = { top: 10, bottom: 50, left: 990, width: 10 }; // centre 995
+    expect(placeBubble(anchor, bubble, viewport).arrowX).toBe(300 - 16);
   });
 });

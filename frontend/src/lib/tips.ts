@@ -46,23 +46,8 @@ export function placeBubble(anchor: Rect, bubble: Size, viewport: Size): Placeme
   const fitsBelow = below + bubble.height <= viewport.height - MARGIN;
   const side = fitsBelow || above < MARGIN ? "below" : "above";
   const center = anchor.left + anchor.width / 2;
-  const idealLeft = center - bubble.width / 2;
   const maxLeft = Math.max(MARGIN, viewport.width - bubble.width - MARGIN);
-  // When the anchor is far enough toward an edge that the bubble itself has
-  // to be clamped, point the arrow at the near corner (inset) rather than at
-  // the anchor's exact centre — past that point the bubble can't move any
-  // closer, so a "precise" centre would drift past where the bubble can go.
-  let left: number;
-  let arrowX: number;
-  if (idealLeft < MARGIN) {
-    left = MARGIN;
-    arrowX = ARROW_INSET;
-  } else if (idealLeft > maxLeft) {
-    left = maxLeft;
-    arrowX = bubble.width - ARROW_INSET;
-  } else {
-    left = idealLeft;
-    arrowX = bubble.width / 2;
-  }
+  const left = Math.min(Math.max(center - bubble.width / 2, MARGIN), maxLeft);
+  const arrowX = Math.min(Math.max(center - left, ARROW_INSET), bubble.width - ARROW_INSET);
   return { side, top: side === "below" ? below : above, left, arrowX };
 }
