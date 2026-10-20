@@ -1417,6 +1417,26 @@ a.back:hover {
   margin-top: 1rem;
 }
 
+/* Connector URL + Copy (Connected apps page and the connect tip) */
+.connector-url {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.connector-url code {
+  overflow-wrap: anywhere;
+}
+
+.connect-app {
+  margin: 1.5rem 0;
+}
+
+.connect-app h2 {
+  margin-bottom: 0.4rem;
+}
+
 /* Connected apps page */
 .grant-list {
   list-style: none;
