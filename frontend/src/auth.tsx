@@ -2,6 +2,7 @@ import { createContext, useContext, useEffect, useState } from "react";
 import type { ReactNode } from "react";
 import * as api from "./api/client";
 import type { User } from "./api/client";
+import type { TipId } from "./lib/tips";
 
 interface Auth {
   user: User | null;
@@ -10,6 +11,7 @@ interface Auth {
   loading: boolean;
   logout: () => Promise<void>;
   deleteAccount: () => Promise<void>;
+  markTipsSeen: (ids: TipId[]) => void;
 }
 
 const AuthContext = createContext<Auth>({
@@ -17,6 +19,7 @@ const AuthContext = createContext<Auth>({
   loading: true,
   logout: async () => {},
   deleteAccount: async () => {},
+  markTipsSeen: () => {},
 });
 
 export function AuthProvider({ children }: { children: ReactNode }) {
@@ -44,8 +47,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setUser(null);
   }
 
+  function markTipsSeen(ids: TipId[]) {
+    // Hide the tip right away. If saving fails it just shows again on a later
+    // visit, which isn't worth an error message.
+    setUser((u) => u && { ...u, tips_seen: [...new Set([...u.tips_seen, ...ids])] });
+    api.markTipsSeen(ids).catch(() => {});
+  }
+
   return (
-    <AuthContext.Provider value={{ user, loading, logout, deleteAccount }}>
+    <AuthContext.Provider value={{ user, loading, logout, deleteAccount, markTipsSeen }}>
       {children}
     </AuthContext.Provider>
   );
