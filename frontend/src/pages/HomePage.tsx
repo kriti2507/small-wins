@@ -8,6 +8,7 @@ import AspectGrid from "../components/AspectGrid";
 import TopicForm from "../components/TopicForm";
 import BackgroundDoodles from "../components/BackgroundDoodles";
 import AccountMenu from "../components/AccountMenu";
+import MonthPicker from "../components/MonthPicker";
 
 // "YYYY-MM" for the month `delta` months away from `month`.
 function shiftMonth(month: string, delta: number): string {
@@ -66,11 +67,7 @@ export default function HomePage() {
             <button type="button" className="preset" aria-label="Previous month" onClick={() => setMonth(shiftMonth(month, -1))}>
               ‹
             </button>
-            <input
-              type="month"
-              value={month}
-              onChange={(e) => e.target.value && setMonth(e.target.value)}
-            />
+            <MonthPicker value={month} onChange={setMonth} thisMonth={thisMonth} />
             <button type="button" className="preset" aria-label="Next month" onClick={() => setMonth(shiftMonth(month, 1))}>
               ›
             </button>

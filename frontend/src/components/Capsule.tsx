@@ -6,6 +6,7 @@ import {
   weekdayIndex,
   addDays,
   formatCellLabel,
+  isoDate,
   WEEKDAYS,
 } from "../lib/dates";
 import HoverCell from "./HoverCell";
@@ -52,6 +53,7 @@ export default function Capsule({ topicsData, range }: Props) {
   const gridStart = addDays(range.start, -weekdayIndex(range.start));
   const gridEnd = addDays(range.end, 6 - weekdayIndex(range.end));
   const gridDays = enumerateDays(gridStart, gridEnd);
+  const today = isoDate(new Date());
 
   return (
     <div className="calendar">
@@ -62,8 +64,17 @@ export default function Capsule({ topicsData, range }: Props) {
       ))}
       {gridDays.map((day) => {
         const inRange = day in byDay;
+        // ISO dates compare correctly as strings.
+        const cls = [
+          "day-cell",
+          !inRange && "outside",
+          inRange && day > today && "future",
+          day === today && "today",
+        ]
+          .filter(Boolean)
+          .join(" ");
         return (
-          <div key={day} className={inRange ? "day-cell" : "day-cell outside"}>
+          <div key={day} className={cls} aria-current={day === today ? "date" : undefined}>
             <div className="day-label">{formatCellLabel(day)}</div>
             {inRange && (
               <div className="day-boxes">

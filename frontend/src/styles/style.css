@@ -186,6 +186,101 @@ h3 {
   line-height: 1;
 }
 
+/* Days still to come: a lighter dashed outline and a faded number. */
+.day-cell.future {
+  border-style: dashed;
+  border-color: var(--border-soft);
+}
+
+.day-cell.future .day-label {
+  color: var(--ink-faint);
+  opacity: 0.7;
+}
+
+/* Today: an accent outline with the date circled. */
+.day-cell.today {
+  border: 1.5px solid var(--accent);
+  background: rgba(179, 101, 74, 0.05);
+}
+
+.day-cell.today .day-label {
+  align-self: flex-start;
+  color: var(--card);
+  background: var(--accent);
+  border-radius: 999px;
+  padding: 0.1rem 0.4rem;
+}
+
+/* Month picker: a label button over a small popover of months. */
+.month-picker {
+  position: relative;
+}
+
+.month-trigger {
+  font-family: var(--font-display);
+  font-size: 0.95rem;
+  min-width: 9.5rem;
+  padding: 0.3rem 0.9rem;
+}
+
+.month-pop {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 50%;
+  transform: translateX(50%);
+  z-index: 10;
+  width: 220px;
+  padding: 0.6rem;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  box-shadow: 0 6px 20px -6px rgba(var(--shadow-tint), 0.25);
+}
+
+.month-pop-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 0.4rem;
+  font-family: var(--font-display);
+  color: var(--ink-strong);
+}
+
+.month-pop-head button {
+  padding: 0.15rem 0.6rem;
+  font-size: 0.85rem;
+}
+
+.month-pop-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 4px;
+}
+
+.month-pop-grid button {
+  padding: 0.35rem 0;
+  font-size: 0.85rem;
+  border-color: transparent;
+  border-radius: 8px;
+}
+
+.month-pop-grid button:hover {
+  background: var(--border-soft);
+  box-shadow: none;
+  transform: none;
+}
+
+.month-pop-grid button.current {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.month-pop-grid button.selected {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--card);
+}
+
 .day-boxes {
   display: flex;
   flex-wrap: wrap;
