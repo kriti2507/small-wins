@@ -43,7 +43,12 @@ export default function ActionMenu({ label, items, className = "" }: Props) {
       ref={ref}
       className={["action-menu", open && "open", className].filter(Boolean).join(" ")}
       onBlur={(e) => {
-        if (!ref.current?.contains(e.relatedTarget as Node)) setOpen(false);
+        // In Safari and macOS Firefox, clicking a button doesn't focus it, so
+        // relatedTarget is null on the blur that precedes that click. Only
+        // close for a blur that lands on a known element outside this menu;
+        // a null target is left to the outside-pointerdown listener instead.
+        const next = e.relatedTarget as Node | null;
+        if (next && !ref.current?.contains(next)) setOpen(false);
       }}
     >
       <button
