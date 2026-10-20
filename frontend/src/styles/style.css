@@ -570,6 +570,87 @@ h3 {
   box-shadow: 0 6px 18px rgba(var(--shadow-tint), 0.22);
 }
 
+/* Onboarding tip bubble (TipBubble). The ::before square, rotated, is the
+   arrow; --arrow-x points it at the anchor. */
+.tip-bubble {
+  position: fixed;
+  z-index: 1000;
+  width: min(320px, calc(100vw - 16px));
+  padding: 0.9rem 1rem 0.75rem;
+  background: #fdf1df;
+  color: var(--ink);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  box-shadow: 0 8px 24px rgba(var(--shadow-tint), 0.25);
+  font-size: 0.9rem;
+  line-height: 1.45;
+  animation: tip-in 0.2s ease;
+}
+
+.tip-bubble::before {
+  content: "";
+  position: absolute;
+  left: var(--arrow-x, 50%);
+  width: 12px;
+  height: 12px;
+  background: #fdf1df;
+  border: 1px solid var(--border);
+  transform: translateX(-50%) rotate(45deg);
+}
+
+.tip-bubble.below::before {
+  top: -7px;
+  border-right: none;
+  border-bottom: none;
+}
+
+.tip-bubble.above::before {
+  bottom: -7px;
+  border-left: none;
+  border-top: none;
+}
+
+.tip-body p {
+  margin: 0 0 0.5rem;
+}
+
+.tip-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.75rem;
+  margin-top: 0.75rem;
+}
+
+.tip-actions .tip-skip {
+  margin-right: auto;
+  padding: 0;
+  background: none;
+  border: none;
+  color: var(--ink-muted);
+  font-size: 0.8rem;
+  text-decoration: underline;
+  box-shadow: none;
+}
+
+.tip-actions .tip-skip:hover {
+  box-shadow: none;
+  transform: none;
+}
+
+@keyframes tip-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tip-bubble {
+    animation: none;
+  }
+}
+
 .contrib-cell.empty-day {
   background: #efe8da;
 }
