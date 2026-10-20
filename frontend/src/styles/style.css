@@ -289,6 +289,14 @@ h3 {
   gap: 1.25rem;
 }
 
+/* Editing an aspect swaps its box for the topic form; a single cell is too
+   narrow for the field rows (and stretches its neighbours to the form's
+   height), so the form takes a full row of its own. */
+.aspect-grid > .topic-form {
+  grid-column: 1 / -1;
+  margin-bottom: 0;
+}
+
 .aspect-box {
   position: relative;
   display: flex;
