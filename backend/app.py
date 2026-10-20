@@ -69,6 +69,15 @@ READ_URL_TTL_SECONDS = 3600
 # URL it points at does.
 READ_REDIRECT_MAX_AGE = 3000
 
+# Per-user caps while signup is open to any Google account: a stopgap
+# against one account filling the database or bucket. Set well above what a
+# real user reaches for a long while.
+MAX_TOPICS_PER_USER = 50
+MAX_ENTRIES_PER_USER = 5000
+MAX_IMAGES_PER_USER = 2000  # originals; their thumbnails ride along
+MAX_TOPIC_BYTES = 20_000  # serialized name + fields
+MAX_ENTRY_BYTES = 100_000  # serialized date, image and field values
+
 import re  # noqa: E402  (kept next to its only user)
 
 
@@ -83,6 +92,10 @@ def valid_body(body):
     if not isinstance(body.get("content", []), list):
         return False
     return len(json.dumps(body)) <= MAX_BODY_BYTES
+
+
+def limit_reached(what, limit):
+    return jsonify({"error": f"You've reached the limit of {limit:,} {what}."}), 403
 
 
 def with_body(slug, entry):
@@ -143,8 +156,11 @@ def add_topic():
     slug = slugify(name)
     if not slug:
         return jsonify({"error": "A topic name is required."}), 400
-    if db.find_topic(g.user_id, slug):
+    topics = db.load_topics(g.user_id)
+    if any(t["slug"] == slug for t in topics):
         return jsonify({"error": f"A topic '{name}' already exists."}), 409
+    if len(topics) >= MAX_TOPICS_PER_USER:
+        return limit_reached("topics", MAX_TOPICS_PER_USER)
 
     color = data.get("color")
     if color not in COLORS:
@@ -167,6 +183,8 @@ def add_topic():
         )
 
     topic = {"slug": slug, "name": name, "color": color, "layout": layout, "fields": fields}
+    if len(json.dumps(topic)) > MAX_TOPIC_BYTES:
+        return jsonify({"error": "That topic is too large."}), 400
     db.add_topic(g.user_id, topic)
     return jsonify(topic), 201
 
@@ -212,6 +230,8 @@ def sign_upload():
     name = f"users/{g.user_id}/{uuid.uuid4().hex}.{ext}"
     want_thumb = data.get("thumb") is True
     try:
+        if storage.count_user_images(g.user_id, MAX_IMAGES_PER_USER) >= MAX_IMAGES_PER_USER:
+            return limit_reached("images", MAX_IMAGES_PER_USER)
         out = {"upload_url": storage.signed_upload_url(name, UPLOAD_URL_TTL_SECONDS)}
         if want_thumb:
             out["thumb_upload_url"] = storage.signed_upload_url(
@@ -277,6 +297,8 @@ def add_entry(slug):
     topic = db.find_topic(g.user_id, slug)
     if not topic:
         return jsonify({"error": "Unknown topic."}), 404
+    if db.count_entries(g.user_id) >= MAX_ENTRIES_PER_USER:
+        return limit_reached("entries", MAX_ENTRIES_PER_USER)
 
     data = request.get_json(force=True)
     entry = {
@@ -292,6 +314,8 @@ def add_entry(slug):
         else:
             entry[key] = val if val is not None else ""
 
+    if len(json.dumps(entry)) > MAX_ENTRY_BYTES:
+        return jsonify({"error": "That entry is too large."}), 400
     db.save_entry(g.user_id, slug, entry)
     return jsonify(entry), 201
 
@@ -333,6 +357,8 @@ def update_entry(slug, entry_id):
         else:
             entry[key] = val if val is not None else ""
 
+    if len(json.dumps(entry)) > MAX_ENTRY_BYTES:
+        return jsonify({"error": "That entry is too large."}), 400
     if "body" in data:
         body = data["body"]
         if not valid_body(body):

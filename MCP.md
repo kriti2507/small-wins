@@ -264,8 +264,8 @@ same approach and none of the problems we hit the first time.
    that means a second function in the same project.
 3. **How does it get data?** Call the app's own API rather than the database,
    so its validation and rules stay in one place.
-4. **Who can connect?** Anyone who can sign in to the web app: sign-in gated
-   by an email allowlist, open app registration, and a consent page that shows
+4. **Who can connect?** Anyone who can sign in to the web app (any verified
+   Google account), open app registration, and a consent page that shows
    the destination. Each app's token names the user who approved it, and the
    MCP server acts only as that user.
 
@@ -325,7 +325,8 @@ same approach and none of the problems we hit the first time.
   (`itsdangerous`), each kind with its own salt, with expiry (code 5 min,
   access 1 h, refresh 30 days) and tied to the client that got them.
 - **Anyone can register an app.** Protection comes from:
-  - sign-in restricted to an allowlist of emails;
+  - approving an app needs a signed-in user, and the app then sees only that
+    user's data;
   - the consent page showing where the code will go;
   - PKCE (required by the SDK);
   - the redirect policy: https anywhere, http only to localhost, no browser-type schemes.

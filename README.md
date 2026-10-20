@@ -22,8 +22,8 @@ The backend talks to Supabase (Postgres + Storage). Copy
 `backend/.env.example` to `backend/.env` and fill in `DATABASE_URL`,
 `SUPABASE_URL`, `SUPABASE_SERVICE_KEY`, and `SUPABASE_BUCKET` (use a
 **separate dev Supabase project** so local work never touches prod data).
-Sign-in uses Google locally too: set `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`,
-`ALLOWED_EMAILS` and `SECRET_KEY`, and add the local callback URL to the
+Sign-in uses Google locally too: set `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`
+and `SECRET_KEY`, and add the local callback URL to the
 OAuth client's authorized redirect URIs.
 
 ```sh
@@ -69,8 +69,9 @@ npm run preview              # locally preview the built frontend
 ## Sign-in
 
 Everything is private: every page and API route needs a signed-in user.
-Sign-in is Google only, limited to the emails in `ALLOWED_EMAILS`. Production
-needs `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `ALLOWED_EMAILS` and
+Sign-in is Google only, open to any account with a verified email; each user
+sees only their own data, within per-user caps (see `DEPLOYMENT.md`, "Who can
+sign in"). Production needs `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` and
 `SECRET_KEY` (signs the 30-day session cookie); see `DEPLOYMENT.md` step 2.
 Behind a reverse proxy, set `TRUST_PROXY=1` so the Google callback URL is built
 with `https`.

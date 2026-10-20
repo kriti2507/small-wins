@@ -3,23 +3,6 @@ import pytest
 import auth
 
 
-# --- is_allowed ----------------------------------------------------------------
-
-def test_is_allowed_matches_the_list_case_and_space_insensitively(monkeypatch):
-    monkeypatch.setenv("ALLOWED_EMAILS", " Me@Example.com , friend@example.com ")
-    assert auth.is_allowed("me@example.com")
-    assert auth.is_allowed("ME@example.COM")
-    assert auth.is_allowed("friend@example.com")
-    assert not auth.is_allowed("stranger@example.com")
-
-
-def test_is_allowed_refuses_everyone_when_unset_or_blank(monkeypatch):
-    monkeypatch.delenv("ALLOWED_EMAILS", raising=False)
-    assert not auth.is_allowed("me@example.com")
-    monkeypatch.setenv("ALLOWED_EMAILS", " , ")
-    assert not auth.is_allowed("")
-
-
 # --- safe_next -----------------------------------------------------------------
 
 @pytest.mark.parametrize("value", ["/", "/topic/runs", "/topic/runs/entry/3?x=1",
@@ -85,7 +68,6 @@ def google(monkeypatch):
 
     monkeypatch.setattr(client, "authorize_redirect", authorize_redirect)
     monkeypatch.setattr(client, "authorize_access_token", authorize_access_token)
-    monkeypatch.setenv("ALLOWED_EMAILS", "me@example.com")
     return fake
 
 
@@ -101,7 +83,7 @@ def test_google_login_sends_you_to_google_with_our_callback(db_anon_client, goog
     assert google.redirect_uris == ["http://localhost/api/auth/google/callback"]
 
 
-def test_callback_signs_in_an_allowed_user_and_returns_to_next(db_anon_client, google):
+def test_callback_signs_in_a_verified_user_and_returns_to_next(db_anon_client, google):
     res = sign_in(db_anon_client)
     assert res.status_code == 302
     assert res.headers["Location"] == "/topic/runs"
@@ -121,18 +103,26 @@ def test_signing_in_again_updates_the_profile_without_a_duplicate(db_anon_client
     assert again["name"] == "Me Renamed"
 
 
-def test_unverified_email_is_not_invited(db_anon_client, google):
+def test_unverified_email_is_refused(db_anon_client, google):
     google.user["email_verified"] = False
     res = sign_in(db_anon_client)
-    assert res.headers["Location"] == "/login?error=not_invited"
+    assert res.headers["Location"] == "/login?error=unverified"
     assert db_anon_client.get("/api/auth/me").status_code == 401
 
 
-def test_email_off_the_allowlist_is_not_invited(db_anon_client, google):
-    google.user["email"] = "stranger@example.com"
+def test_missing_email_is_refused(db_anon_client, google):
+    google.user["email"] = ""
     res = sign_in(db_anon_client)
-    assert res.headers["Location"] == "/login?error=not_invited"
+    assert res.headers["Location"] == "/login?error=unverified"
     assert db_anon_client.get("/api/auth/me").status_code == 401
+
+
+def test_any_verified_google_account_can_sign_in(db_anon_client, google):
+    google.user.update(sub="g-stranger", email="Stranger@Example.com")
+    res = sign_in(db_anon_client)
+    assert res.headers["Location"] == "/topic/runs"
+    user = db_anon_client.get("/api/auth/me").get_json()["user"]
+    assert user["email"] == "stranger@example.com"
 
 
 def test_cancelled_or_broken_google_sign_in_reports_failure(db_anon_client, google):

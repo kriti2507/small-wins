@@ -29,8 +29,8 @@ describe("googleSignInHref", () => {
 
 describe("loginErrorMessage", () => {
   it("explains the errors the backend sends back", () => {
-    expect(loginErrorMessage("not_invited")).toBe(
-      "This Google account isn't invited to Small Wins.",
+    expect(loginErrorMessage("unverified")).toBe(
+      "This Google account's email isn't verified.",
     );
     expect(loginErrorMessage("failed")).toBe("Sign-in didn't finish. Try again.");
   });
