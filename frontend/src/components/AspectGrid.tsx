@@ -1,4 +1,5 @@
 import { useState } from "react";
+import type { Ref } from "react";
 import { Link } from "react-router-dom";
 import type { Topic, Entry } from "../types";
 import SummaryGraph from "./SummaryGraph";
@@ -19,11 +20,21 @@ interface Props {
   onAddMore: () => void;
   // Called after a topic is edited or deleted, to reload the grid.
   onChanged: () => void;
+  // For the onboarding tip: a ref on the first tile, and whether to keep its
+  // ⋯ menu visible (it otherwise appears on hover) while the tip points at it.
+  firstTileRef?: Ref<HTMLDivElement>;
+  highlightFirst?: boolean;
 }
 
 // Grid of per-topic summary boxes plus an "+ Add more" tile. Each box's ⋯
 // menu edits it in place or deletes it.
-export default function AspectGrid({ topicsData, onAddMore, onChanged }: Props) {
+export default function AspectGrid({
+  topicsData,
+  onAddMore,
+  onChanged,
+  firstTileRef,
+  highlightFirst,
+}: Props) {
   const [editing, setEditing] = useState<string | null>(null);
   const [confirming, setConfirming] = useState<string | null>(null);
   const [deleting, setDeleting] = useState(false);
@@ -41,7 +52,7 @@ export default function AspectGrid({ topicsData, onAddMore, onChanged }: Props) 
 
   return (
     <div className="aspect-grid">
-      {topicsData.map(({ topic, colorIndex, entries }) => {
+      {topicsData.map(({ topic, colorIndex, entries }, i) => {
         if (editing === topic.slug) {
           return (
             <TopicForm
@@ -59,7 +70,11 @@ export default function AspectGrid({ topicsData, onAddMore, onChanged }: Props) 
         const tint = buttonColorFor(topic, colorIndex);
         const count = entries.length;
         return (
-          <div className="aspect-box" key={topic.slug}>
+          <div
+            className={`aspect-box${highlightFirst && i === 0 ? " tip-target" : ""}`}
+            key={topic.slug}
+            ref={i === 0 ? firstTileRef : undefined}
+          >
             {confirming !== topic.slug && (
               <ActionMenu
                 className="corner-menu"

@@ -419,6 +419,11 @@ h3 {
   }
 }
 
+/* While the starter tip points at a tile, show its ⋯ so the tip makes sense. */
+.aspect-box.tip-target .corner-menu {
+  opacity: 1;
+}
+
 /* Cards and tiles are transformed, so each is its own stacking context; lift
    the one whose menu is open above its neighbours. */
 .aspect-box:has(.action-menu.open),
