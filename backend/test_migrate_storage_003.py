@@ -49,9 +49,9 @@ class FakeStore:
         self.objects.pop(name, None)
 
 
-def seed(user_id, image=None, figure=None, slug="runs", entry_id=1):
+def seed(user_id, image=None, figure=None, slug="workout", entry_id=1):
     conn = db.get_conn()
-    db.load_topics(user_id)  # seeds "runs"
+    db.load_topics(user_id)  # seeds "workout"
     conn.execute(
         'insert into entries (user_id, topic_slug, id, date, image, "values") '
         "values (%s, %s, %s, '2026-01-01', %s, '{}')",
@@ -70,9 +70,9 @@ def test_rewrites_hero_and_figure_urls_to_per_user_paths(app_ctx):
 
     m.migrate(db.get_conn(), store, dry_run=False)
 
-    entry = db.find_entry(uid, "runs", 1)
+    entry = db.find_entry(uid, "workout", 1)
     assert entry["image"] == f"/api/images/users/{uid}/hero.jpg"
-    fig = db.load_post(uid, "runs", 1)["content"][0]["content"][0]
+    fig = db.load_post(uid, "workout", 1)["content"][0]["content"][0]
     assert fig["attrs"] == {"src": f"/api/images/users/{uid}/fig.png", "width": "wide"}
     assert store.objects[f"users/{uid}/hero.jpg"][1] == "image/jpeg"
     for name, _ctype, cache in store.uploads:
@@ -115,7 +115,7 @@ def test_each_user_gets_their_own_copy_of_a_shared_object(app_ctx):
 
     assert f"users/{a}/shared.jpg" in store.objects
     assert f"users/{b}/shared.jpg" in store.objects
-    assert db.find_entry(a, "runs", 1)["image"] == f"/api/images/users/{a}/shared.jpg"
+    assert db.find_entry(a, "workout", 1)["image"] == f"/api/images/users/{a}/shared.jpg"
 
 
 def test_dry_run_changes_nothing(app_ctx, capsys):
@@ -126,7 +126,7 @@ def test_dry_run_changes_nothing(app_ctx, capsys):
     m.migrate(db.get_conn(), store, dry_run=True)
 
     assert store.uploads == []
-    assert db.find_entry(uid, "runs", 1)["image"] == OLD + "hero.jpg"
+    assert db.find_entry(uid, "workout", 1)["image"] == OLD + "hero.jpg"
     out = capsys.readouterr().out
     assert f"users/{uid}/hero.jpg" in out  # the plan is printed
 
@@ -152,7 +152,7 @@ def test_foreign_urls_are_left_alone(app_ctx):
     m.migrate(db.get_conn(), store, dry_run=False)
 
     assert store.uploads == []
-    assert db.find_entry(uid, "runs", 1)["image"] == "https://example.com/x.jpg"
+    assert db.find_entry(uid, "workout", 1)["image"] == "https://example.com/x.jpg"
 
 
 def test_migrate_user_skips_an_unsafe_name_instead_of_silently_leaving_it(app_ctx, capsys):
@@ -165,7 +165,7 @@ def test_migrate_user_skips_an_unsafe_name_instead_of_silently_leaving_it(app_ct
     m.migrate(db.get_conn(), store, dry_run=False)
 
     assert store.uploads == []
-    assert db.find_entry(uid, "runs", 1)["image"] == OLD + "my photo.jpg"
+    assert db.find_entry(uid, "workout", 1)["image"] == OLD + "my photo.jpg"
     out = capsys.readouterr().out
     assert f"skip (unsafe name, migrate by hand): {OLD}my photo.jpg" in out
 
@@ -204,8 +204,8 @@ def test_a_missing_object_is_skipped_without_wedging_the_run(app_ctx, capsys):
 
     m.migrate(db.get_conn(), store, dry_run=False)
 
-    assert db.find_entry(uid, "runs", 1)["image"] == OLD + "missing.jpg"
-    assert db.find_entry(uid, "runs", 2)["image"] == f"/api/images/users/{uid}/ok.jpg"
+    assert db.find_entry(uid, "workout", 1)["image"] == OLD + "missing.jpg"
+    assert db.find_entry(uid, "workout", 2)["image"] == f"/api/images/users/{uid}/ok.jpg"
     out = capsys.readouterr().out
     assert "skip (missing object): missing.jpg" in out
 
@@ -219,7 +219,7 @@ def test_corrupt_bytes_still_migrate_the_main_object_without_a_thumbnail(app_ctx
 
     assert store.objects[f"users/{uid}/bad.jpg"] == (b"not an image", "image/jpeg")
     assert f"users/{uid}/bad.thumb" not in store.objects
-    assert db.find_entry(uid, "runs", 1)["image"] == f"/api/images/users/{uid}/bad.jpg"
+    assert db.find_entry(uid, "workout", 1)["image"] == f"/api/images/users/{uid}/bad.jpg"
     out = capsys.readouterr().out
     assert f"warn (no thumbnail): users/{uid}/bad.jpg" in out
 
@@ -233,16 +233,16 @@ def test_a_concurrent_edit_during_migration_is_not_clobbered(app_ctx):
 
     class ConcurrentEditStore(FakeStore):
         def download(self, name):
-            doc = db.load_post(uid, "runs", 1)
+            doc = db.load_post(uid, "workout", 1)
             doc["content"].append({"type": "paragraph", "content": []})
-            db.save_post(uid, "runs", 1, doc)
+            db.save_post(uid, "workout", 1, doc)
             return super().download(name)
 
     store = ConcurrentEditStore({"fig.png": (png(), "image/png")})
 
     m.migrate(db.get_conn(), store, dry_run=False)
 
-    doc = db.load_post(uid, "runs", 1)
+    doc = db.load_post(uid, "workout", 1)
     assert doc["content"][-1] == {"type": "paragraph", "content": []}
     fig = doc["content"][0]["content"][0]
     assert fig["attrs"]["src"] == f"/api/images/users/{uid}/fig.png"
@@ -290,8 +290,8 @@ def test_thumbnail_key_collision_renames_the_second_object(app_ctx, capsys):
 
     m.migrate(db.get_conn(), store, dry_run=False)
 
-    img_jpg = db.find_entry(uid, "runs", 1)["image"]
-    img_png = db.find_entry(uid, "runs", 2)["image"]
+    img_jpg = db.find_entry(uid, "workout", 1)["image"]
+    img_png = db.find_entry(uid, "workout", 2)["image"]
     assert img_jpg != img_png
 
     for img, ext in [(img_jpg, "jpg"), (img_png, "png")]:
@@ -330,7 +330,7 @@ def test_a_failed_thumbnail_upload_propagates_and_leaves_the_url_unchanged(app_c
     with pytest.raises(RuntimeError):
         m.migrate(db.get_conn(), store, dry_run=False)
 
-    assert db.find_entry(uid, "runs", 1)["image"] == OLD + "hero.jpg"
+    assert db.find_entry(uid, "workout", 1)["image"] == OLD + "hero.jpg"
 
 
 def test_delete_old_without_confirmation_reports_a_count_and_deletes_nothing(app_ctx, capsys):

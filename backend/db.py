@@ -33,17 +33,24 @@ def get_conn():
 
 DEFAULT_TOPICS = [
     {
-        "slug": "runs",
-        "name": "Runs",
+        "slug": "workout",
+        "name": "Workout",
         "color": "green",
         "layout": "photo-top",
         "fields": [
             {"key": "title", "label": "Title", "type": "text", "direction": "none"},
-            {"key": "distance", "label": "Distance (km)", "type": "number", "direction": "higher"},
-            {"key": "pace", "label": "Pace", "type": "pace", "direction": "lower"},
-            {"key": "heart_rate", "label": "Heart rate (bpm)", "type": "number", "direction": "none"},
+            {"key": "duration", "label": "Duration (min)", "type": "number", "direction": "higher"},
         ],
-    }
+    },
+    {
+        "slug": "journal",
+        "name": "Journal",
+        "color": "purple",
+        "layout": "photo-top",
+        "fields": [
+            {"key": "title", "label": "Title", "type": "text", "direction": "none"},
+        ],
+    },
 ]
 
 

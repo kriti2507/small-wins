@@ -28,10 +28,10 @@ def test_get_conn_can_query_the_schema(app_ctx):
     assert {"topics", "entries", "posts", "users"} <= names
 
 
-def test_seeds_default_runs_topic_when_the_user_has_none(uid):
+def test_seeds_default_topics_when_the_user_has_none(uid):
     import db
     topics = db.load_topics(uid)
-    assert [t["slug"] for t in topics] == ["runs"]
+    assert [t["slug"] for t in topics] == ["workout", "journal"]
     assert topics[0]["fields"][0]["key"] == "title"
 
 
@@ -39,14 +39,14 @@ def test_seeding_is_per_user(uid, other):
     import db
     db.add_topic(uid, BOOKS)  # uid now has topics, so no seed for uid
     assert [t["slug"] for t in db.load_topics(uid)] == ["books"]
-    assert [t["slug"] for t in db.load_topics(other)] == ["runs"]
+    assert [t["slug"] for t in db.load_topics(other)] == ["workout", "journal"]
 
 
 def test_add_topic_appends_and_find_topic_reads_back(uid):
     import db
-    db.load_topics(uid)  # seeds "runs" at position 0
+    db.load_topics(uid)  # seeds "workout" and "journal" at positions 0 and 1
     db.add_topic(uid, BOOKS)
-    assert [t["slug"] for t in db.load_topics(uid)] == ["runs", "books"]
+    assert [t["slug"] for t in db.load_topics(uid)] == ["workout", "journal", "books"]
     found = db.find_topic(uid, "books")
     assert found["name"] == "Books"
     assert found["fields"][0]["label"] == "Author"
@@ -65,11 +65,11 @@ def test_update_topic_updates_only_the_users_topic(uid, other):
     import db
     db.load_topics(uid)
     db.load_topics(other)
-    updated = db.update_topic(uid, "runs", {"layout": "thumbnail", "name": "Jogs"})
+    updated = db.update_topic(uid, "workout", {"layout": "thumbnail", "name": "Jogs"})
     assert updated["layout"] == "thumbnail"
-    assert updated["slug"] == "runs"
-    assert db.find_topic(uid, "runs")["name"] == "Jogs"
-    assert db.find_topic(other, "runs")["layout"] == "photo-top"
+    assert updated["slug"] == "workout"
+    assert db.find_topic(uid, "workout")["name"] == "Jogs"
+    assert db.find_topic(other, "workout")["layout"] == "photo-top"
     assert db.update_topic(uid, "nope", {"layout": "thumbnail"}) is None
 
 
@@ -77,49 +77,48 @@ def test_delete_topic_cascades_entries_and_only_touches_the_users_topic(uid, oth
     import db
     db.load_topics(uid)
     db.load_topics(other)
-    db.save_entry(uid, "runs", {"id": 1, "date": "2026-07-09", "image": None})
-    db.save_post(uid, "runs", 1, {"type": "doc", "content": []})
-    db.add_topic(uid, BOOKS)  # so the reload below doesn't re-seed "runs"
-    db.delete_topic(uid, "runs")
-    assert [t["slug"] for t in db.load_topics(uid)] == ["books"]
-    assert db.load_entries(uid, "runs") == []
-    assert db.load_post(uid, "runs", 1) is None
-    assert db.find_topic(other, "runs") is not None
+    db.save_entry(uid, "workout", {"id": 1, "date": "2026-07-09", "image": None})
+    db.save_post(uid, "workout", 1, {"type": "doc", "content": []})
+    db.delete_topic(uid, "workout")
+    assert [t["slug"] for t in db.load_topics(uid)] == ["journal"]
+    assert db.load_entries(uid, "workout") == []
+    assert db.load_post(uid, "workout", 1) is None
+    assert db.find_topic(other, "workout") is not None
 
 
 def test_entry_round_trip_flattens_values(uid):
     import db
     db.load_topics(uid)
-    assert db.next_entry_id(uid, "runs") == 1
-    db.save_entry(uid, "runs", {"id": 1, "date": "2026-07-09", "image": None,
-                                "title": "Run", "distance": 5.25})
-    assert db.next_entry_id(uid, "runs") == 2
-    got = db.find_entry(uid, "runs", 1)
+    assert db.next_entry_id(uid, "workout") == 1
+    db.save_entry(uid, "workout", {"id": 1, "date": "2026-07-09", "image": None,
+                                "title": "Run", "duration": 45})
+    assert db.next_entry_id(uid, "workout") == 2
+    got = db.find_entry(uid, "workout", 1)
     assert got == {"id": 1, "date": "2026-07-09", "image": None,
-                   "title": "Run", "distance": 5.25}
-    assert db.load_entries(uid, "runs") == [got]
-    assert db.find_entry(uid, "runs", 999) is None
+                   "title": "Run", "duration": 45}
+    assert db.load_entries(uid, "workout") == [got]
+    assert db.find_entry(uid, "workout", 999) is None
 
 
 def test_entries_are_private_and_numbered_per_user(uid, other):
     import db
     db.load_topics(uid)
     db.load_topics(other)
-    db.save_entry(uid, "runs", {"id": 1, "date": "", "image": None, "title": "A's"})
-    assert db.next_entry_id(other, "runs") == 1
-    assert db.find_entry(other, "runs", 1) is None
-    assert db.load_entries(other, "runs") == []
-    db.save_entry(other, "runs", {"id": 1, "date": "", "image": None, "title": "B's"})
-    assert db.find_entry(uid, "runs", 1)["title"] == "A's"
-    assert db.find_entry(other, "runs", 1)["title"] == "B's"
+    db.save_entry(uid, "workout", {"id": 1, "date": "", "image": None, "title": "A's"})
+    assert db.next_entry_id(other, "workout") == 1
+    assert db.find_entry(other, "workout", 1) is None
+    assert db.load_entries(other, "workout") == []
+    db.save_entry(other, "workout", {"id": 1, "date": "", "image": None, "title": "B's"})
+    assert db.find_entry(uid, "workout", 1)["title"] == "A's"
+    assert db.find_entry(other, "workout", 1)["title"] == "B's"
 
 
 def test_save_entry_upserts(uid):
     import db
     db.load_topics(uid)
-    db.save_entry(uid, "runs", {"id": 1, "date": "2026-07-09", "image": None, "title": "A"})
-    db.save_entry(uid, "runs", {"id": 1, "date": "2026-07-10", "image": None, "title": "B"})
-    assert db.load_entries(uid, "runs") == [
+    db.save_entry(uid, "workout", {"id": 1, "date": "2026-07-09", "image": None, "title": "A"})
+    db.save_entry(uid, "workout", {"id": 1, "date": "2026-07-10", "image": None, "title": "B"})
+    assert db.load_entries(uid, "workout") == [
         {"id": 1, "date": "2026-07-10", "image": None, "title": "B"}
     ]
 
@@ -127,62 +126,62 @@ def test_save_entry_upserts(uid):
 def test_post_round_trip_and_absence(uid):
     import db
     db.load_topics(uid)
-    db.save_entry(uid, "runs", {"id": 1, "date": "2026-07-09", "image": None, "title": "A"})
-    assert db.load_post(uid, "runs", 1) is None
+    db.save_entry(uid, "workout", {"id": 1, "date": "2026-07-09", "image": None, "title": "A"})
+    assert db.load_post(uid, "workout", 1) is None
     doc = {"type": "doc", "content": [
         {"type": "paragraph", "content": [{"type": "text", "text": "hi"}]}]}
-    db.save_post(uid, "runs", 1, doc)
-    assert db.load_post(uid, "runs", 1) == doc
+    db.save_post(uid, "workout", 1, doc)
+    assert db.load_post(uid, "workout", 1) == doc
     doc2 = {"type": "doc", "content": []}
-    db.save_post(uid, "runs", 1, doc2)  # upsert
-    assert db.load_post(uid, "runs", 1) == doc2
+    db.save_post(uid, "workout", 1, doc2)  # upsert
+    assert db.load_post(uid, "workout", 1) == doc2
 
 
 def test_posts_are_private(uid, other):
     import db
     db.load_topics(uid)
     db.load_topics(other)
-    db.save_entry(uid, "runs", {"id": 1, "date": "", "image": None})
-    db.save_entry(other, "runs", {"id": 1, "date": "", "image": None})
-    db.save_post(uid, "runs", 1, {"type": "doc", "content": []})
-    assert db.load_post(other, "runs", 1) is None
+    db.save_entry(uid, "workout", {"id": 1, "date": "", "image": None})
+    db.save_entry(other, "workout", {"id": 1, "date": "", "image": None})
+    db.save_post(uid, "workout", 1, {"type": "doc", "content": []})
+    assert db.load_post(other, "workout", 1) is None
 
 
 def test_delete_entry_removes_row_and_cascades_post(uid):
     import db
     db.load_topics(uid)
-    db.save_entry(uid, "runs", {"id": 1, "date": "2026-07-09", "image": None, "title": "A"})
-    db.save_post(uid, "runs", 1, {"type": "doc", "content": []})
+    db.save_entry(uid, "workout", {"id": 1, "date": "2026-07-09", "image": None, "title": "A"})
+    db.save_post(uid, "workout", 1, {"type": "doc", "content": []})
 
-    db.delete_entry(uid, "runs", 1)
+    db.delete_entry(uid, "workout", 1)
 
-    assert db.find_entry(uid, "runs", 1) is None
-    assert db.load_post(uid, "runs", 1) is None  # FK cascade drops the posts row too
+    assert db.find_entry(uid, "workout", 1) is None
+    assert db.load_post(uid, "workout", 1) is None  # FK cascade drops the posts row too
 
 
 def test_delete_entry_is_a_no_op_for_unknown_or_other_users_entry(uid, other):
     import db
     db.load_topics(uid)
-    db.save_entry(uid, "runs", {"id": 1, "date": "2026-07-09", "image": None, "title": "A"})
+    db.save_entry(uid, "workout", {"id": 1, "date": "2026-07-09", "image": None, "title": "A"})
 
-    db.delete_entry(uid, "runs", 999)
-    db.delete_entry(other, "runs", 1)
+    db.delete_entry(uid, "workout", 999)
+    db.delete_entry(other, "workout", 1)
 
-    assert db.find_entry(uid, "runs", 1) is not None
+    assert db.find_entry(uid, "workout", 1) is not None
 
 
 def test_deleting_a_user_cascades_to_all_their_data(uid, other):
     import db
     db.load_topics(uid)
     db.load_topics(other)
-    db.save_entry(uid, "runs", {"id": 1, "date": "", "image": None})
-    db.save_post(uid, "runs", 1, {"type": "doc", "content": []})
-    db.save_entry(other, "runs", {"id": 1, "date": "", "image": None})
+    db.save_entry(uid, "workout", {"id": 1, "date": "", "image": None})
+    db.save_post(uid, "workout", 1, {"type": "doc", "content": []})
+    db.save_entry(other, "workout", {"id": 1, "date": "", "image": None})
 
     db.get_conn().execute("delete from users where id=%s", (uid,))
 
     assert db.all_post_docs(uid) == []
-    assert db.find_entry(other, "runs", 1) is not None
+    assert db.find_entry(other, "workout", 1) is not None
 
 
 def test_all_entry_images_excludes_nulls_and_other_users(uid, other):
@@ -190,10 +189,10 @@ def test_all_entry_images_excludes_nulls_and_other_users(uid, other):
     db.load_topics(uid)
     db.load_topics(other)
     db.add_topic(uid, {**BOOKS, "fields": []})
-    db.save_entry(uid, "runs", {"id": 1, "date": "", "image": "https://x/a.jpg"})
-    db.save_entry(uid, "runs", {"id": 2, "date": "", "image": None})
+    db.save_entry(uid, "workout", {"id": 1, "date": "", "image": "https://x/a.jpg"})
+    db.save_entry(uid, "workout", {"id": 2, "date": "", "image": None})
     db.save_entry(uid, "books", {"id": 1, "date": "", "image": "https://x/b.jpg"})
-    db.save_entry(other, "runs", {"id": 1, "date": "", "image": "https://x/c.jpg"})
+    db.save_entry(other, "workout", {"id": 1, "date": "", "image": "https://x/c.jpg"})
 
     assert db.all_entry_images(uid) == {"https://x/a.jpg", "https://x/b.jpg"}
 
@@ -202,12 +201,12 @@ def test_all_post_docs_returns_only_this_users_docs(uid, other):
     import db
     db.load_topics(uid)
     db.load_topics(other)
-    db.save_entry(uid, "runs", {"id": 1, "date": "", "image": None})
-    db.save_entry(other, "runs", {"id": 1, "date": "", "image": None})
+    db.save_entry(uid, "workout", {"id": 1, "date": "", "image": None})
+    db.save_entry(other, "workout", {"id": 1, "date": "", "image": None})
     doc1 = {"type": "doc", "content": [{"type": "paragraph"}]}
     doc2 = {"type": "doc", "content": []}
-    db.save_post(uid, "runs", 1, doc1)
-    db.save_post(other, "runs", 1, doc2)
+    db.save_post(uid, "workout", 1, doc1)
+    db.save_post(other, "workout", 1, doc2)
 
     assert db.all_post_docs(uid) == [doc1]
 

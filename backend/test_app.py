@@ -17,7 +17,7 @@ DOC = {
 
 
 def make_entry(client):
-    res = client.post("/api/topics/runs/entries", json={"date": "2026-07-09", "title": "Run"})
+    res = client.post("/api/topics/workout/entries", json={"date": "2026-07-09", "title": "Run"})
     assert res.status_code == 201
     return res.get_json()["id"]
 
@@ -40,16 +40,16 @@ def image_url(client, name):
 
 def test_patch_body_round_trip(client):
     entry_id = make_entry(client)
-    res = client.patch(f"/api/topics/runs/entries/{entry_id}", json={"body": DOC})
+    res = client.patch(f"/api/topics/workout/entries/{entry_id}", json={"body": DOC})
     assert res.status_code == 200
-    res = client.get(f"/api/topics/runs/entries/{entry_id}")
+    res = client.get(f"/api/topics/workout/entries/{entry_id}")
     assert res.get_json()["body"] == DOC
 
 
 def test_patch_accepts_empty_doc(client):
     entry_id = make_entry(client)
     res = client.patch(
-        f"/api/topics/runs/entries/{entry_id}",
+        f"/api/topics/workout/entries/{entry_id}",
         json={"body": {"type": "doc", "content": []}},
     )
     assert res.status_code == 200
@@ -62,7 +62,7 @@ def test_patch_rejects_non_doc_bodies(client):
         {"type": "paragraph"}, {"type": "doc", "content": "nope"},
     ]
     for bad in bad_bodies:
-        res = client.patch(f"/api/topics/runs/entries/{entry_id}", json={"body": bad})
+        res = client.patch(f"/api/topics/workout/entries/{entry_id}", json={"body": bad})
         assert res.status_code == 400, f"accepted invalid body: {bad!r}"
 
 
@@ -70,35 +70,39 @@ def test_patch_rejects_oversized_body(client):
     entry_id = make_entry(client)
     big = {"type": "doc", "content": [{"type": "paragraph",
            "content": [{"type": "text", "text": "x" * 1_100_000}]}]}
-    res = client.patch(f"/api/topics/runs/entries/{entry_id}", json={"body": big})
+    res = client.patch(f"/api/topics/workout/entries/{entry_id}", json={"body": big})
     assert res.status_code == 400
 
 
 def test_patch_updates_text_and_number_fields(client):
     entry_id = make_entry(client)
     res = client.patch(
-        f"/api/topics/runs/entries/{entry_id}",
-        json={"title": "Morning run", "distance": "5.25"},
+        f"/api/topics/workout/entries/{entry_id}",
+        json={"title": "Morning run", "duration": "42.5"},
     )
     assert res.status_code == 200
-    entry = client.get(f"/api/topics/runs/entries/{entry_id}").get_json()
+    entry = client.get(f"/api/topics/workout/entries/{entry_id}").get_json()
     assert entry["title"] == "Morning run"
-    assert entry["distance"] == 5.25
+    assert entry["duration"] == 42.5
 
 
 def test_patch_updates_date_and_image(client):
     entry_id = make_entry(client)
     client.patch(
-        f"/api/topics/runs/entries/{entry_id}",
+        f"/api/topics/workout/entries/{entry_id}",
         json={"date": "2026-07-13", "image": "https://cdn/x.jpg"},
     )
-    entry = client.get(f"/api/topics/runs/entries/{entry_id}").get_json()
+    entry = client.get(f"/api/topics/workout/entries/{entry_id}").get_json()
     assert entry["date"] == "2026-07-13"
     assert entry["image"] == "https://cdn/x.jpg"
 
 
 def test_patch_coerces_pace_and_blanks_to_none(client):
-    entry_id = make_entry(client)
+    client.post("/api/topics", json={"name": "Runs", "fields": [
+        {"label": "Pace", "type": "pace", "direction": "lower"},
+        {"label": "Distance", "type": "number", "direction": "higher"},
+    ]})
+    entry_id = client.post("/api/topics/runs/entries", json={}).get_json()["id"]
     client.patch(f"/api/topics/runs/entries/{entry_id}", json={"pace": 315})
     client.patch(f"/api/topics/runs/entries/{entry_id}", json={"distance": ""})
     entry = client.get(f"/api/topics/runs/entries/{entry_id}").get_json()
@@ -108,8 +112,8 @@ def test_patch_coerces_pace_and_blanks_to_none(client):
 
 def test_patch_ignores_unknown_keys(client):
     entry_id = make_entry(client)
-    client.patch(f"/api/topics/runs/entries/{entry_id}", json={"bogus": "x", "id": 999})
-    entry = client.get(f"/api/topics/runs/entries/{entry_id}").get_json()
+    client.patch(f"/api/topics/workout/entries/{entry_id}", json={"bogus": "x", "id": 999})
+    entry = client.get(f"/api/topics/workout/entries/{entry_id}").get_json()
     assert "bogus" not in entry
     assert entry["id"] == entry_id
 
@@ -117,22 +121,22 @@ def test_patch_ignores_unknown_keys(client):
 def test_patch_updates_fields_and_body_together(client):
     entry_id = make_entry(client)
     res = client.patch(
-        f"/api/topics/runs/entries/{entry_id}",
+        f"/api/topics/workout/entries/{entry_id}",
         json={"title": "Combined", "body": DOC},
     )
     assert res.status_code == 200
-    entry = client.get(f"/api/topics/runs/entries/{entry_id}").get_json()
+    entry = client.get(f"/api/topics/workout/entries/{entry_id}").get_json()
     assert entry["title"] == "Combined"
     assert entry["body"] == DOC
 
 
 def test_api_responses_hide_the_post_reference(client):
     entry_id = make_entry(client)
-    client.patch(f"/api/topics/runs/entries/{entry_id}", json={"body": DOC})
-    single = client.get(f"/api/topics/runs/entries/{entry_id}").get_json()
+    client.patch(f"/api/topics/workout/entries/{entry_id}", json={"body": DOC})
+    single = client.get(f"/api/topics/workout/entries/{entry_id}").get_json()
     assert single["body"] == DOC
     assert "post" not in single
-    listed = client.get("/api/topics/runs/entries").get_json()
+    listed = client.get("/api/topics/workout/entries").get_json()
     entry = next(e for e in listed if e["id"] == entry_id)
     assert entry["body"] == DOC
     assert "post" not in entry
@@ -140,23 +144,23 @@ def test_api_responses_hide_the_post_reference(client):
 
 def test_repeated_saves_keep_latest_body(client):
     entry_id = make_entry(client)
-    client.patch(f"/api/topics/runs/entries/{entry_id}", json={"body": DOC})
+    client.patch(f"/api/topics/workout/entries/{entry_id}", json={"body": DOC})
     doc2 = {"type": "doc", "content": [{"type": "paragraph",
             "content": [{"type": "text", "text": "edited"}]}]}
-    client.patch(f"/api/topics/runs/entries/{entry_id}", json={"body": doc2})
-    assert client.get(f"/api/topics/runs/entries/{entry_id}").get_json()["body"] == doc2
+    client.patch(f"/api/topics/workout/entries/{entry_id}", json={"body": doc2})
+    assert client.get(f"/api/topics/workout/entries/{entry_id}").get_json()["body"] == doc2
 
 
 def test_entry_without_post_has_no_body(client):
     entry_id = make_entry(client)
-    single = client.get(f"/api/topics/runs/entries/{entry_id}")
+    single = client.get(f"/api/topics/workout/entries/{entry_id}")
     assert single.status_code == 200
     assert "body" not in single.get_json()
 
 
 def test_unknown_topic_and_entry_404(client):
     assert client.get("/api/topics/nope/entries").status_code == 404
-    assert client.get("/api/topics/runs/entries/999").status_code == 404
+    assert client.get("/api/topics/workout/entries/999").status_code == 404
 
 
 # --- image_urls_in -----------------------------------------------------------
@@ -214,10 +218,10 @@ def test_image_urls_in_tolerates_missing_or_malformed_content():
 
 def test_delete_entry_removes_it(client):
     entry_id = make_entry(client)
-    res = client.delete(f"/api/topics/runs/entries/{entry_id}")
+    res = client.delete(f"/api/topics/workout/entries/{entry_id}")
     assert res.status_code == 200
     assert res.get_json() == {"ok": True}
-    assert client.get(f"/api/topics/runs/entries/{entry_id}").status_code == 404
+    assert client.get(f"/api/topics/workout/entries/{entry_id}").status_code == 404
 
 
 def test_delete_entry_cascades_the_post_body(client):
@@ -225,16 +229,16 @@ def test_delete_entry_cascades_the_post_body(client):
     with client.session_transaction() as s:
         uid = s["user_id"]
     entry_id = make_entry(client)
-    client.patch(f"/api/topics/runs/entries/{entry_id}", json={"body": DOC})
-    assert db.load_post(uid, "runs", entry_id) == DOC
+    client.patch(f"/api/topics/workout/entries/{entry_id}", json={"body": DOC})
+    assert db.load_post(uid, "workout", entry_id) == DOC
 
-    res = client.delete(f"/api/topics/runs/entries/{entry_id}")
+    res = client.delete(f"/api/topics/workout/entries/{entry_id}")
     assert res.status_code == 200
 
     # Querying the posts table directly (rather than just re-GETting the
     # entry) proves the FK cascade actually ran the delete, not merely that
     # the entries row is gone.
-    assert db.load_post(uid, "runs", entry_id) is None
+    assert db.load_post(uid, "workout", entry_id) is None
 
 
 def test_delete_entry_unknown_topic_404(client):
@@ -244,7 +248,7 @@ def test_delete_entry_unknown_topic_404(client):
 
 
 def test_delete_entry_unknown_entry_404(client):
-    res = client.delete("/api/topics/runs/entries/999")
+    res = client.delete("/api/topics/workout/entries/999")
     assert res.status_code == 404
     assert res.get_json()["error"] == "Unknown entry."
 
@@ -256,13 +260,13 @@ def test_delete_entry_deletes_hero_and_body_images_and_their_thumbnails(client, 
     uid = my_id(client)
 
     entry_id = make_entry(client)
-    client.patch(f"/api/topics/runs/entries/{entry_id}", json={"image": image_url(client, "hero.jpg")})
+    client.patch(f"/api/topics/workout/entries/{entry_id}", json={"image": image_url(client, "hero.jpg")})
     doc = {"type": "doc", "content": [
         {"type": "figure", "attrs": {"src": image_url(client, "body.jpg")}, "content": []},
     ]}
-    client.patch(f"/api/topics/runs/entries/{entry_id}", json={"body": doc})
+    client.patch(f"/api/topics/workout/entries/{entry_id}", json={"body": doc})
 
-    res = client.delete(f"/api/topics/runs/entries/{entry_id}")
+    res = client.delete(f"/api/topics/workout/entries/{entry_id}")
     assert res.status_code == 200
     assert set(deleted) == {
         f"users/{uid}/hero.jpg", f"users/{uid}/hero.thumb",
@@ -283,9 +287,9 @@ def test_delete_entry_tolerates_a_missing_thumbnail(client, monkeypatch):
     monkeypatch.setattr(app_module.app.logger, "warning", lambda *a: warnings.append(a))
 
     entry_id = make_entry(client)
-    client.patch(f"/api/topics/runs/entries/{entry_id}", json={"image": image_url(client, "a.gif")})
+    client.patch(f"/api/topics/workout/entries/{entry_id}", json={"image": image_url(client, "a.gif")})
 
-    assert client.delete(f"/api/topics/runs/entries/{entry_id}").status_code == 200
+    assert client.delete(f"/api/topics/workout/entries/{entry_id}").status_code == 200
     assert deleted == [f"users/{my_id(client)}/a.gif"]
     assert warnings == []  # a GIF has no thumbnail; that's not a failure
 
@@ -306,9 +310,9 @@ def test_delete_entry_still_deletes_the_thumbnail_when_the_main_image_is_already
     monkeypatch.setattr(app_module.app.logger, "warning", lambda *a: warnings.append(a))
 
     entry_id = make_entry(client)
-    client.patch(f"/api/topics/runs/entries/{entry_id}", json={"image": image_url(client, "a.jpg")})
+    client.patch(f"/api/topics/workout/entries/{entry_id}", json={"image": image_url(client, "a.jpg")})
 
-    assert client.delete(f"/api/topics/runs/entries/{entry_id}").status_code == 200
+    assert client.delete(f"/api/topics/workout/entries/{entry_id}").status_code == 200
     assert deleted == [f"users/{my_id(client)}/a.thumb"]
     assert warnings == []  # the main image being gone already isn't a failure
 
@@ -326,9 +330,9 @@ def test_delete_entry_logs_once_when_only_the_thumbnail_delete_fails(client, mon
     monkeypatch.setattr(app_module.app.logger, "warning", lambda *a: warnings.append(a))
 
     entry_id = make_entry(client)
-    client.patch(f"/api/topics/runs/entries/{entry_id}", json={"image": image_url(client, "a.jpg")})
+    client.patch(f"/api/topics/workout/entries/{entry_id}", json={"image": image_url(client, "a.jpg")})
 
-    res = client.delete(f"/api/topics/runs/entries/{entry_id}")
+    res = client.delete(f"/api/topics/workout/entries/{entry_id}")
     assert res.status_code == 200
     assert deleted == [f"users/{my_id(client)}/a.jpg"]
     assert len(warnings) == 1
@@ -342,15 +346,15 @@ def test_delete_entry_keeps_image_still_referenced_by_another_entry(client, monk
     shared_url = image_url(client, "shared.jpg")
     entry1 = make_entry(client)
     entry2 = make_entry(client)
-    client.patch(f"/api/topics/runs/entries/{entry1}", json={"image": shared_url})
-    client.patch(f"/api/topics/runs/entries/{entry2}", json={"image": shared_url})
+    client.patch(f"/api/topics/workout/entries/{entry1}", json={"image": shared_url})
+    client.patch(f"/api/topics/workout/entries/{entry2}", json={"image": shared_url})
 
-    res = client.delete(f"/api/topics/runs/entries/{entry1}")
+    res = client.delete(f"/api/topics/workout/entries/{entry1}")
     assert res.status_code == 200
     assert deleted == []
 
     # the surviving entry can still be fetched with its image intact
-    assert client.get(f"/api/topics/runs/entries/{entry2}").get_json()["image"] == shared_url
+    assert client.get(f"/api/topics/workout/entries/{entry2}").get_json()["image"] == shared_url
 
 
 def test_delete_entry_keeps_figure_copied_into_another_post(client, monkeypatch):
@@ -371,13 +375,13 @@ def test_delete_entry_keeps_figure_copied_into_another_post(client, monkeypatch)
         {"type": "figure", "attrs": {"src": shared_url}, "content": []},
     ]}
     entry1 = make_entry(client)
-    client.patch(f"/api/topics/runs/entries/{entry1}", json={"body": doc})
+    client.patch(f"/api/topics/workout/entries/{entry1}", json={"body": doc})
     entry2_res = client.post("/api/topics/books/entries", json={"date": "2026-07-09"})
     assert entry2_res.status_code == 201
     entry2 = entry2_res.get_json()["id"]
     client.patch(f"/api/topics/books/entries/{entry2}", json={"body": doc})
 
-    res = client.delete(f"/api/topics/runs/entries/{entry1}")
+    res = client.delete(f"/api/topics/workout/entries/{entry1}")
     assert res.status_code == 200
     assert deleted == []
 
@@ -396,9 +400,9 @@ def test_delete_entry_skips_externally_hosted_image(client, monkeypatch):
     doc = {"type": "doc", "content": [
         {"type": "figure", "attrs": {"src": external_url}, "content": []},
     ]}
-    client.patch(f"/api/topics/runs/entries/{entry_id}", json={"body": doc})
+    client.patch(f"/api/topics/workout/entries/{entry_id}", json={"body": doc})
 
-    res = client.delete(f"/api/topics/runs/entries/{entry_id}")
+    res = client.delete(f"/api/topics/workout/entries/{entry_id}")
     assert res.status_code == 200
     assert deleted == []
 
@@ -410,9 +414,9 @@ def test_delete_entry_leaves_old_public_urls_alone(client, monkeypatch):
 
     entry_id = make_entry(client)
     old = "https://proj.supabase.co/storage/v1/object/public/uploads/old.jpg"
-    client.patch(f"/api/topics/runs/entries/{entry_id}", json={"image": old})
+    client.patch(f"/api/topics/workout/entries/{entry_id}", json={"image": old})
 
-    assert client.delete(f"/api/topics/runs/entries/{entry_id}").status_code == 200
+    assert client.delete(f"/api/topics/workout/entries/{entry_id}").status_code == 200
     assert deleted == []
 
 
@@ -426,9 +430,9 @@ def test_delete_entry_storage_failure_still_returns_200(client, monkeypatch):
 
     entry_id = make_entry(client)
     hero_url = image_url(client, "hero.jpg")
-    client.patch(f"/api/topics/runs/entries/{entry_id}", json={"image": hero_url})
+    client.patch(f"/api/topics/workout/entries/{entry_id}", json={"image": hero_url})
 
-    res = client.delete(f"/api/topics/runs/entries/{entry_id}")
+    res = client.delete(f"/api/topics/workout/entries/{entry_id}")
     assert res.status_code == 200
     assert res.get_json() == {"ok": True}
 
@@ -442,7 +446,7 @@ def test_add_topic_appends_and_is_listed(client):
     })
     assert res.status_code == 201
     slugs = [t["slug"] for t in client.get("/api/topics").get_json()]
-    assert slugs == ["runs", "books"]
+    assert slugs == ["workout", "journal", "books"]
 
 
 def test_add_duplicate_topic_conflicts(client):
@@ -452,14 +456,14 @@ def test_add_duplicate_topic_conflicts(client):
 
 
 def test_add_topic_refuses_once_the_topic_limit_is_reached(client, monkeypatch):
-    monkeypatch.setattr(app_module, "MAX_TOPICS_PER_USER", 2)  # "runs" + one more
+    monkeypatch.setattr(app_module, "MAX_TOPICS_PER_USER", 3)  # the two defaults + one more
     assert client.post("/api/topics", json={"name": "Books"}).status_code == 201
 
     res = client.post("/api/topics", json={"name": "Films"})
 
     assert res.status_code == 403
-    assert res.get_json()["error"] == "You've reached the limit of 2 topics."
-    assert [t["slug"] for t in client.get("/api/topics").get_json()] == ["runs", "books"]
+    assert res.get_json()["error"] == "You've reached the limit of 3 topics."
+    assert [t["slug"] for t in client.get("/api/topics").get_json()] == ["workout", "journal", "books"]
 
 
 def test_add_topic_rejects_an_oversized_topic(client):
@@ -467,7 +471,7 @@ def test_add_topic_rejects_an_oversized_topic(client):
         "name": "Books", "fields": [{"label": "x" * 25_000, "type": "text"}],
     })
     assert res.status_code == 400
-    assert [t["slug"] for t in client.get("/api/topics").get_json()] == ["runs"]
+    assert [t["slug"] for t in client.get("/api/topics").get_json()] == ["workout", "journal"]
 
 
 def test_add_entry_refuses_once_the_entry_limit_is_reached(client, monkeypatch):
@@ -477,68 +481,69 @@ def test_add_entry_refuses_once_the_entry_limit_is_reached(client, monkeypatch):
     # The limit counts entries across every topic, not per topic.
     assert client.post("/api/topics/books/entries", json={}).status_code == 201
 
-    res = client.post("/api/topics/runs/entries", json={"title": "Third"})
+    res = client.post("/api/topics/workout/entries", json={"title": "Third"})
 
     assert res.status_code == 403
     assert res.get_json()["error"] == "You've reached the limit of 2 entries."
-    assert len(client.get("/api/topics/runs/entries").get_json()) == 1
+    assert len(client.get("/api/topics/workout/entries").get_json()) == 1
 
 
 def test_add_and_patch_entry_reject_oversized_field_values(client):
     big = "x" * 110_000
-    res = client.post("/api/topics/runs/entries", json={"title": big})
+    res = client.post("/api/topics/workout/entries", json={"title": big})
     assert res.status_code == 400
-    assert client.get("/api/topics/runs/entries").get_json() == []
+    assert client.get("/api/topics/workout/entries").get_json() == []
 
     entry_id = make_entry(client)
-    res = client.patch(f"/api/topics/runs/entries/{entry_id}", json={"title": big})
+    res = client.patch(f"/api/topics/workout/entries/{entry_id}", json={"title": big})
     assert res.status_code == 400
-    assert client.get(f"/api/topics/runs/entries/{entry_id}").get_json()["title"] == "Run"
+    assert client.get(f"/api/topics/workout/entries/{entry_id}").get_json()["title"] == "Run"
 
 
 def test_set_topic_layout(client):
-    res = client.patch("/api/topics/runs", json={"layout": "thumbnail"})
+    res = client.patch("/api/topics/workout", json={"layout": "thumbnail"})
     assert res.status_code == 200
     assert res.get_json()["layout"] == "thumbnail"
 
 
 def test_edit_topic_name_and_color_keeps_the_slug(client):
     entry_id = make_entry(client)
-    res = client.patch("/api/topics/runs", json={"name": " Jogs ", "color": "blue"})
+    res = client.patch("/api/topics/workout", json={"name": " Jogs ", "color": "blue"})
     assert res.status_code == 200
     body = res.get_json()
-    assert (body["slug"], body["name"], body["color"]) == ("runs", "Jogs", "blue")
-    assert client.get(f"/api/topics/runs/entries/{entry_id}").status_code == 200
+    assert (body["slug"], body["name"], body["color"]) == ("workout", "Jogs", "blue")
+    assert client.get(f"/api/topics/workout/entries/{entry_id}").status_code == 200
 
 
 def test_edit_topic_rejects_bad_values(client):
     client.post("/api/topics", json={"name": "Books"})
-    assert client.patch("/api/topics/runs", json={"name": "  "}).status_code == 400
-    assert client.patch("/api/topics/runs", json={"color": "nope"}).status_code == 400
-    assert client.patch("/api/topics/runs", json={"name": "books"}).status_code == 409
+    assert client.patch("/api/topics/workout", json={"name": "  "}).status_code == 400
+    assert client.patch("/api/topics/workout", json={"color": "nope"}).status_code == 400
+    assert client.patch("/api/topics/workout", json={"name": "books"}).status_code == 409
     assert client.patch("/api/topics/nope", json={"name": "X"}).status_code == 404
     # Re-saving a topic under its own name is fine.
-    assert client.patch("/api/topics/runs", json={"name": "Runs"}).status_code == 200
+    assert client.patch("/api/topics/workout", json={"name": "Runs"}).status_code == 200
 
 
 def test_delete_topic_removes_it_and_its_entries(client):
     import db
     client.post("/api/topics", json={"name": "Books"})
     entry_id = make_entry(client)
-    client.patch(f"/api/topics/runs/entries/{entry_id}", json={"body": DOC})
+    client.patch(f"/api/topics/workout/entries/{entry_id}", json={"body": DOC})
 
-    res = client.delete("/api/topics/runs")
+    res = client.delete("/api/topics/workout")
 
     assert res.status_code == 200
-    assert [t["slug"] for t in client.get("/api/topics").get_json()] == ["books"]
-    assert db.load_entries(my_id(client), "runs") == []
-    assert db.load_post(my_id(client), "runs", entry_id) is None
+    assert [t["slug"] for t in client.get("/api/topics").get_json()] == ["journal", "books"]
+    assert db.load_entries(my_id(client), "workout") == []
+    assert db.load_post(my_id(client), "workout", entry_id) is None
 
 
 def test_delete_topic_refuses_the_last_one(client):
-    res = client.delete("/api/topics/runs")
+    assert client.delete("/api/topics/journal").status_code == 200
+    res = client.delete("/api/topics/workout")
     assert res.status_code == 400
-    assert [t["slug"] for t in client.get("/api/topics").get_json()] == ["runs"]
+    assert [t["slug"] for t in client.get("/api/topics").get_json()] == ["workout"]
 
 
 def test_delete_topic_unknown_404(client):
@@ -553,15 +558,15 @@ def test_delete_topic_deletes_its_images_but_not_shared_ones(client, monkeypatch
     client.post("/api/topics", json={"name": "Books"})
 
     entry_id = make_entry(client)
-    client.patch(f"/api/topics/runs/entries/{entry_id}", json={"image": image_url(client, "hero.jpg")})
+    client.patch(f"/api/topics/workout/entries/{entry_id}", json={"image": image_url(client, "hero.jpg")})
     doc = {"type": "doc", "content": [
         {"type": "figure", "attrs": {"src": image_url(client, "shared.jpg")}, "content": []},
     ]}
-    client.patch(f"/api/topics/runs/entries/{entry_id}", json={"body": doc})
+    client.patch(f"/api/topics/workout/entries/{entry_id}", json={"body": doc})
     book = client.post("/api/topics/books/entries", json={"date": "2026-07-09"}).get_json()["id"]
     client.patch(f"/api/topics/books/entries/{book}", json={"image": image_url(client, "shared.jpg")})
 
-    assert client.delete("/api/topics/runs").status_code == 200
+    assert client.delete("/api/topics/workout").status_code == 200
     assert set(deleted) == {f"users/{uid}/hero.jpg", f"users/{uid}/hero.thumb"}
 
 
@@ -850,7 +855,7 @@ def protected_routes():
     for rule in app_module.app.url_map.iter_rules():
         if rule.endpoint in PUBLIC_ENDPOINTS:
             continue
-        path = (rule.rule.replace("<int:entry_id>", "1").replace("<slug>", "runs")
+        path = (rule.rule.replace("<int:entry_id>", "1").replace("<slug>", "workout")
                 .replace("<path:key>", "users/1/a.jpg").replace("<int:grant_id>", "1"))
         assert "<" not in path, f"teach protected_routes about {rule.rule}"
         for method in sorted(rule.methods - {"HEAD", "OPTIONS"}):
@@ -868,7 +873,7 @@ def test_every_route_needs_sign_in(anon_client):
 
 def test_reads_and_writes_work_when_signed_in(client):
     assert client.get("/api/topics").status_code == 200
-    res = client.post("/api/topics/runs/entries", json={"date": "2026-07-10", "title": "Run"})
+    res = client.post("/api/topics/workout/entries", json={"date": "2026-07-10", "title": "Run"})
     assert res.status_code == 201
 
 
@@ -928,7 +933,7 @@ def test_login_required_exposes_the_user_on_g(no_db_client, monkeypatch):
 
 def test_export_csv_includes_entries_fields_and_body(client):
     entry_id = make_entry(client)
-    client.patch(f"/api/topics/runs/entries/{entry_id}", json={"body": DOC})
+    client.patch(f"/api/topics/workout/entries/{entry_id}", json={"body": DOC})
     res = client.get("/api/export.csv")
     assert res.status_code == 200
     assert res.headers["Content-Type"].startswith("text/csv")
