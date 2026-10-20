@@ -270,11 +270,17 @@ def update_topic(slug):
         others = [t for t in db.load_topics(g.user_id) if t["slug"] != slug]
         if any(slugify(name) in (t["slug"], slugify(t["name"])) for t in others):
             return jsonify({"error": f"A topic '{name}' already exists."}), 409
-        if len(json.dumps({**topic, "name": name})) > MAX_TOPIC_BYTES:
-            return jsonify({"error": "That topic is too large."}), 400
         changes["name"] = name
+    removed = []
+    if "fields" in data:
+        try:
+            changes["fields"], removed = merge_fields(topic["fields"], data["fields"])
+        except ValueError as err:
+            return jsonify({"error": str(err)}), 400
 
-    return jsonify(db.update_topic(g.user_id, slug, changes))
+    if len(json.dumps({**topic, **changes})) > MAX_TOPIC_BYTES:
+        return jsonify({"error": "That topic is too large."}), 400
+    return jsonify(db.update_topic(g.user_id, slug, changes, removed_keys=removed))
 
 
 @app.route("/api/topics/<slug>", methods=["DELETE"])

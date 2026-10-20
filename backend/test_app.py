@@ -998,3 +998,66 @@ def test_merge_fields_never_reuses_an_existing_key():
 def test_merge_fields_rejects_bad_input(submitted):
     with pytest.raises(ValueError):
         app_module.merge_fields(OLD_FIELDS, submitted)
+
+
+# --- PATCH /api/topics/<slug> fields -----------------------------------------
+
+def workout_fields(client):
+    topics = client.get("/api/topics").get_json()
+    return next(t for t in topics if t["slug"] == "workout")["fields"]
+
+
+def test_patch_topic_fields_rename_and_reorder_keep_values(client):
+    entry_id = make_entry(client)
+    client.patch(f"/api/topics/workout/entries/{entry_id}", json={"duration": 30})
+
+    res = client.patch("/api/topics/workout", json={"fields": [
+        {"key": "duration", "label": "Time", "direction": "lower"},
+        {"key": "title", "label": "Title"},
+    ]})
+
+    assert res.status_code == 200
+    assert [(f["key"], f["label"], f["direction"]) for f in res.get_json()["fields"]] == [
+        ("duration", "Time", "lower"), ("title", "Title", "none")]
+    assert workout_fields(client) == res.get_json()["fields"]
+    entry = client.get(f"/api/topics/workout/entries/{entry_id}").get_json()
+    assert entry["duration"] == 30
+
+
+def test_patch_topic_fields_remove_erases_values(client):
+    import db
+    entry_id = make_entry(client)
+    client.patch(f"/api/topics/workout/entries/{entry_id}", json={"duration": 30})
+
+    res = client.patch("/api/topics/workout", json={"fields": [{"key": "title", "label": "Title"}]})
+
+    assert res.status_code == 200
+    assert [f["key"] for f in workout_fields(client)] == ["title"]
+    stored = db.find_entry(my_id(client), "workout", entry_id)
+    assert "duration" not in stored
+    assert stored["title"] == "Run"
+
+
+def test_patch_topic_fields_readded_name_gets_a_fresh_key(client):
+    import db
+    entry_id = make_entry(client)
+    client.patch(f"/api/topics/workout/entries/{entry_id}", json={"duration": 30})
+
+    res = client.patch("/api/topics/workout", json={"fields": [
+        {"key": "title", "label": "Title"},
+        {"label": "Duration", "type": "number", "direction": "higher"},
+    ]})
+
+    assert res.status_code == 200
+    assert [f["key"] for f in res.get_json()["fields"]] == ["title", "duration_2"]
+    stored = db.find_entry(my_id(client), "workout", entry_id)
+    assert "duration" not in stored and "duration_2" not in stored
+
+
+def test_patch_topic_fields_rejects_bad_input_and_changes_nothing(client):
+    before = workout_fields(client)
+    assert client.patch("/api/topics/workout", json={
+        "fields": [{"key": "nope", "label": "X"}]}).status_code == 400
+    assert client.patch("/api/topics/workout", json={
+        "fields": [{"key": "title", "label": "x" * 25_000}]}).status_code == 400
+    assert workout_fields(client) == before
