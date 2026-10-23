@@ -19,9 +19,11 @@ export function safeNext(next: string | null): string {
 }
 
 /** The backend route that starts Google sign-in. A full page navigation,
- * not fetch: Google's sign-in has to happen in the browser window. */
-export function googleSignInHref(next: string): string {
-  return `/api/auth/google?next=${encodeURIComponent(safeNext(next))}`;
+ * not fetch: Google's sign-in has to happen in the browser window. `source`
+ * is where they first came from (lib/source.ts), kept if this is a sign-up. */
+export function googleSignInHref(next: string, source: string | null = null): string {
+  const href = `/api/auth/google?next=${encodeURIComponent(safeNext(next))}`;
+  return source ? `${href}&src=${encodeURIComponent(source)}` : href;
 }
 
 /** The message for /login?error=..., set by the backend's Google callback. */
