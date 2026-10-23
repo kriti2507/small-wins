@@ -176,17 +176,19 @@ def find_entry(user_id, slug, entry_id):
     return _flatten(row) if row else None
 
 
-def save_entry(user_id, slug, entry):
+def save_entry(user_id, slug, entry, via=None):
+    """Create or update an entry. `via` ('web' or 'mcp') and created_at are
+    only set when the entry is created; edits leave them alone."""
     values = {k: v for k, v in entry.items()
               if k not in ("id", "date", "image", "body")}
     conn = get_conn()
     conn.execute(
-        'insert into entries (user_id, topic_slug, id, date, image, "values") '
-        "values (%s, %s, %s, %s, %s, %s) "
+        'insert into entries (user_id, topic_slug, id, date, image, "values", via) '
+        "values (%s, %s, %s, %s, %s, %s, %s) "
         "on conflict (user_id, topic_slug, id) do update set "
         'date = excluded.date, image = excluded.image, "values" = excluded."values"',
         (user_id, slug, entry["id"], entry.get("date", ""), entry.get("image"),
-         Jsonb(values)),
+         Jsonb(values), via),
     )
 
 
@@ -246,19 +248,19 @@ def topic_post_docs(user_id, slug):
 USER_COLUMNS = "id, email, name, avatar_url"
 
 
-def upsert_user(google_sub, email, name, avatar_url):
+def upsert_user(google_sub, email, name, avatar_url, signup_source=None):
     """Create the user on first sign-in; refresh their profile on later ones.
 
     Keyed by Google's stable `sub`, not email, since an account's email can
-    change.
+    change. signup_source is kept from the first sign-in only.
     """
     row = get_conn().execute(
-        "insert into users (google_sub, email, name, avatar_url) "
-        "values (%s, %s, %s, %s) "
+        "insert into users (google_sub, email, name, avatar_url, signup_source, last_seen_at) "
+        "values (%s, %s, %s, %s, %s, now()) "
         "on conflict (google_sub) do update set email = excluded.email, "
-        "name = excluded.name, avatar_url = excluded.avatar_url "
+        "name = excluded.name, avatar_url = excluded.avatar_url, last_seen_at = now() "
         f"returning {USER_COLUMNS}",
-        (google_sub, email, name, avatar_url),
+        (google_sub, email, name, avatar_url, signup_source),
     ).fetchone()
     return dict(row)
 
@@ -266,6 +268,15 @@ def upsert_user(google_sub, email, name, avatar_url):
 def find_user(user_id):
     row = get_conn().execute(
         f"select {USER_COLUMNS} from users where id=%s", (user_id,)
+    ).fetchone()
+    return dict(row) if row else None
+
+
+def touch_user(user_id):
+    """find_user, also recording that they opened the app just now."""
+    row = get_conn().execute(
+        f"update users set last_seen_at = now() where id=%s returning {USER_COLUMNS}",
+        (user_id,),
     ).fetchone()
     return dict(row) if row else None
 

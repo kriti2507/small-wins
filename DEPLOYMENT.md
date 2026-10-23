@@ -238,6 +238,11 @@ against a Supabase URL.
   Applied to production 2026-10-14. Its header has the run steps.
 - `004_mcp_grants.sql` — Phase 3 Part B, adds the `mcp_grants` table. See
   "Upgrading to MCP grants" above.
+- `006_analytics.sql` — adds `entries.created_at`/`via` and
+  `users.signup_source`/`last_seen_at`. Only adds columns, so it's safe to
+  run any time before the analytics deploy (the live code ignores them) and
+  never needs undoing if the code is rolled back. Then deploy. The queries
+  are in `backend/analytics.sql`.
 
 For any future migration: back up first, run it in the SQL Editor right before
 the matching deploy (old code breaks against a new schema and vice versa), and

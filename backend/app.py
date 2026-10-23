@@ -422,7 +422,7 @@ def add_entry(slug):
 
     if len(json.dumps(entry)) > MAX_ENTRY_BYTES:
         return jsonify({"error": "That entry is too large."}), 400
-    db.save_entry(g.user_id, slug, entry)
+    db.save_entry(g.user_id, slug, entry, via=g.via)
     return jsonify(entry), 201
 
 

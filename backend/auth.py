@@ -55,13 +55,15 @@ def current_user_id():
 
 def login_required(fn):
     """Refuse the request unless current_user_id() names someone; routes
-    read that id from g.user_id."""
+    read that id from g.user_id, and from g.via whether it came from the
+    browser ('web') or a connected app ('mcp')."""
     @wraps(fn)
     def wrapper(*args, **kwargs):
         user_id = current_user_id()
         if user_id is None:
             return jsonify({"error": "Sign in to continue."}), 401
         g.user_id = user_id
+        g.via = "web" if session.get("user_id") is not None else "mcp"
         return fn(*args, **kwargs)
 
     return wrapper
@@ -90,7 +92,8 @@ def init_app(app):
 @bp.route("/api/auth/me", methods=["GET"])
 def me():
     user_id = session.get("user_id")
-    user = db.find_user(user_id) if user_id is not None else None
+    # Every app load asks this, so it's also where last_seen_at is kept fresh.
+    user = db.touch_user(user_id) if user_id is not None else None
     if user is None:
         session.pop("user_id", None)
         return jsonify({"error": "Not signed in."}), 401
@@ -126,9 +129,21 @@ def _finish_sign_in(user):
     return redirect(next_path)
 
 
+MAX_SOURCE = 100
+
+
+def clean_source(value):
+    """Where someone says they came from (the frontend's ?src=), trimmed;
+    None for anything blank or non-printable. Only ever stored, never shown."""
+    if not isinstance(value, str) or not value.strip() or not value.isprintable():
+        return None
+    return value.strip()[:MAX_SOURCE]
+
+
 @bp.route("/api/auth/google", methods=["GET"])
 def google_login():
     session["next"] = safe_next(request.args.get("next"))
+    session["src"] = clean_source(request.args.get("src"))
     return oauth.google.authorize_redirect(url_for("auth.google_callback", _external=True))
 
 
@@ -149,5 +164,6 @@ def google_callback():
     if not info.get("email_verified") or not email:
         session.clear()
         return redirect("/login?error=unverified")
-    user = db.upsert_user(info["sub"], email, info.get("name"), info.get("picture"))
+    user = db.upsert_user(info["sub"], email, info.get("name"), info.get("picture"),
+                          session.get("src"))
     return _finish_sign_in(user)

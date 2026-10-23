@@ -4,7 +4,12 @@ create table users (
   email       text not null,
   name        text,
   avatar_url  text,
-  created_at  timestamptz not null default now()
+  created_at  timestamptz not null default now(),
+  -- Analytics (see backend/analytics.sql): where they first came from (a
+  -- utm_source, ?ref= or referring site, set once at sign-up) and when they
+  -- last opened the app.
+  signup_source text,
+  last_seen_at  timestamptz
 );
 
 -- Every row below belongs to one user; slugs and entry ids are unique per
@@ -27,6 +32,10 @@ create table entries (
   date       text    not null default '',
   image      text,
   "values"   jsonb   not null default '{}'::jsonb,
+  -- When it was logged (`date` is whatever day the person picked) and from
+  -- where: 'web' or 'mcp'. Neither changes when the entry is edited.
+  created_at timestamptz not null default now(),
+  via        text,
   primary key (user_id, topic_slug, id),
   foreign key (user_id, topic_slug) references topics(user_id, slug) on delete cascade
 );
