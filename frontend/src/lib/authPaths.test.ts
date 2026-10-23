@@ -8,6 +8,18 @@ describe("loginPath", () => {
   });
 });
 
+describe("googleSignInHref with a source", () => {
+  it("passes where you first came from along, encoded", () => {
+    expect(googleSignInHref("/", "reddit.com/r x")).toBe(
+      "/api/auth/google?next=%2F&src=reddit.com%2Fr%20x",
+    );
+  });
+
+  it("leaves it out when there isn't one", () => {
+    expect(googleSignInHref("/", null)).toBe("/api/auth/google?next=%2F");
+  });
+});
+
 describe("safeNext", () => {
   it("keeps same-site paths", () => {
     expect(safeNext("/topic/runs/entry/3")).toBe("/topic/runs/entry/3");
