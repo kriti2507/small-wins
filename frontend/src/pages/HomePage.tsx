@@ -1,4 +1,5 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { Link } from "react-router-dom";
 import type { DateRange } from "../types";
 import { getTopics, getEntries } from "../api/client";
 import { scoreEntries } from "../lib/scoring";
@@ -9,6 +10,10 @@ import TopicForm from "../components/TopicForm";
 import BackgroundDoodles from "../components/BackgroundDoodles";
 import AccountMenu from "../components/AccountMenu";
 import MonthPicker from "../components/MonthPicker";
+import { useAuth } from "../auth";
+import { ALL_TIPS, homeTip } from "../lib/tips";
+import TipBubble from "../components/TipBubble";
+import ConnectorUrl from "../components/ConnectorUrl";
 
 // "YYYY-MM" for the month `delta` months away from `month`.
 function shiftMonth(month: string, delta: number): string {
@@ -27,6 +32,17 @@ export default function HomePage() {
   const [showForm, setShowForm] = useState(false);
   const thisMonth = isoDate(new Date()).slice(0, 7);
   const [month, setMonth] = useState(thisMonth);
+  const { user, markTipsSeen } = useAuth();
+  const firstTileRef = useRef<HTMLDivElement>(null);
+  const avatarRef = useRef<HTMLButtonElement>(null);
+  const [gridBusy, setGridBusy] = useState(false);
+  const [menuOpen, setMenuOpen] = useState(false);
+  const entryCount = topicsData.reduce((n, d) => n + d.entries.length, 0);
+  // Hide the home tips while the add-topic form is open, a tile is being
+  // edited/confirming delete, or the account menu is open.
+  const busy = showForm || gridBusy || menuOpen;
+  const tip = user ? homeTip(user.tips_seen, topicsData.length, entryCount, busy) : null;
+  const skipAll = () => markTipsSeen(ALL_TIPS);
 
   function load() {
     getTopics().then((topics) =>
@@ -53,7 +69,7 @@ export default function HomePage() {
   return (
     <>
       <BackgroundDoodles />
-      <AccountMenu />
+      <AccountMenu triggerRef={avatarRef} onOpenChange={setMenuOpen} />
       <h1>Small Wins</h1>
       <p className="intro">
         A little diary for the good things. Track the small wins across the
@@ -87,6 +103,9 @@ export default function HomePage() {
         topicsData={topicsData}
         onAddMore={() => setShowForm(true)}
         onChanged={load}
+        firstTileRef={firstTileRef}
+        highlightFirst={tip === "starter"}
+        onBusyChange={setGridBusy}
       />
 
       {showForm && (
@@ -97,6 +116,39 @@ export default function HomePage() {
           }}
           onCancel={() => setShowForm(false)}
         />
+      )}
+
+      {tip === "starter" && (
+        <TipBubble
+          anchor={firstTileRef}
+          label="Tip: your starter aspects"
+          onDismiss={() => markTipsSeen(["starter"])}
+          onSkipAll={skipAll}
+        >
+          <p>
+            We've started you with a couple of aspects. Use ⋯ to rename or delete them,
+            or <strong>+ Add more</strong> to track something of your own.
+          </p>
+        </TipBubble>
+      )}
+      {tip === "connect" && (
+        <TipBubble
+          anchor={avatarRef}
+          label="Tip: connect Claude or ChatGPT"
+          onDismiss={() => markTipsSeen(["connect"])}
+          onSkipAll={skipAll}
+        >
+          <p>
+            Want to log wins from Claude or ChatGPT? Add Small Wins as a custom
+            connector with this URL:
+          </p>
+          <ConnectorUrl origin={window.location.origin} />
+          <p>
+            It's always under{" "}
+            <Link to="/apps" onClick={() => markTipsSeen(["connect"])}>Connected apps</Link>{" "}
+            in your account menu.
+          </p>
+        </TipBubble>
       )}
     </>
   );

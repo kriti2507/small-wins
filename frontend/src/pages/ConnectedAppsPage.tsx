@@ -3,6 +3,7 @@ import { Link } from "react-router-dom";
 import type { Grant } from "../types";
 import { listGrants, revokeGrant } from "../api/client";
 import GrantList from "../components/GrantList";
+import ConnectorUrl from "../components/ConnectorUrl";
 
 export default function ConnectedAppsPage() {
   const [grants, setGrants] = useState<Grant[] | null>(null);
@@ -41,13 +42,17 @@ export default function ConnectedAppsPage() {
         Apps you've connected through MCP (like Claude) can read your entries and
         add or edit them. Revoke one to cut it off right away.
       </p>
+      <section className="connect-app">
+        <h2>Connect an app</h2>
+        <p>Add a custom connector in Claude, ChatGPT or another MCP app with this URL:</p>
+        <ConnectorUrl origin={window.location.origin} />
+      </section>
       {error && <p className="login-error">{error}</p>}
       {grants && (
         <GrantList
           grants={grants}
           confirming={confirming}
           busy={busy}
-          origin={window.location.origin}
           onAsk={setConfirming}
           onConfirm={revoke}
           onCancel={() => {

@@ -17,6 +17,8 @@ import storage
 
 DEV_SECRET = "dev-only-not-secret"
 GOOGLE_METADATA_URL = "https://accounts.google.com/.well-known/openid-configuration"
+# Onboarding tips the frontend may mark as seen (frontend/src/lib/tips.ts).
+TIPS = {"starter", "log", "connect"}
 
 bp = Blueprint("auth", __name__)
 oauth = OAuth()
@@ -94,6 +96,21 @@ def me():
     user_id = session.get("user_id")
     # Every app load asks this, so it's also where last_seen_at is kept fresh.
     user = db.touch_user(user_id) if user_id is not None else None
+    if user is None:
+        session.pop("user_id", None)
+        return jsonify({"error": "Not signed in."}), 401
+    return jsonify({"user": user})
+
+
+@bp.route("/api/tips/seen", methods=["POST"])
+@grants.session_required  # tips are for the person in the browser
+def tips_seen():
+    body = request.get_json(silent=True)
+    tips = body.get("tips") if isinstance(body, dict) else None
+    if (not isinstance(tips, list) or not tips
+            or not all(isinstance(t, str) and t in TIPS for t in tips)):
+        return jsonify({"error": "Unknown tip."}), 400
+    user = db.mark_tips_seen(g.user_id, tips)
     if user is None:
         session.pop("user_id", None)
         return jsonify({"error": "Not signed in."}), 401

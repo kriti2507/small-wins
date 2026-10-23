@@ -924,6 +924,35 @@ def test_me_drops_a_session_whose_user_is_gone(db_anon_client):
         assert "user_id" not in s
 
 
+def test_me_includes_the_tips_already_seen(client):
+    assert client.get("/api/auth/me").get_json()["user"]["tips_seen"] == []
+
+
+def test_marking_tips_seen_records_them_on_the_account(client):
+    res = client.post("/api/tips/seen", json={"tips": ["starter"]})
+    assert res.status_code == 200
+    assert res.get_json()["user"]["tips_seen"] == ["starter"]
+    client.post("/api/tips/seen", json={"tips": ["starter", "connect"]})
+    assert client.get("/api/auth/me").get_json()["user"]["tips_seen"] == ["connect", "starter"]
+
+
+@pytest.mark.parametrize("body", [{"tips": ["nope"]}, {"tips": []}, {"tips": "starter"},
+                                  {"tips": [{"a": 1}]}, {}, None, [], "x"])
+def test_marking_tips_seen_rejects_anything_but_known_tips(client, body):
+    res = client.post("/api/tips/seen", json=body)
+    assert res.status_code == 400
+    assert client.get("/api/auth/me").get_json()["user"]["tips_seen"] == []
+
+
+def test_marking_tips_seen_needs_a_browser_session(test_db, anon_client):
+    from conftest import make_grant, make_user
+    assert anon_client.post("/api/tips/seen", json={"tips": ["log"]}).status_code == 401
+    _grant_id, credential = make_grant(make_user("sub-mcp", "mcp@example.com"))
+    res = anon_client.post("/api/tips/seen", json={"tips": ["log"]},
+                           headers={"Authorization": f"Bearer {credential}"})
+    assert res.status_code == 401
+
+
 def test_logout_signs_out(client):
     assert client.post("/api/auth/logout").status_code == 200
     assert client.get("/api/auth/me").status_code == 401

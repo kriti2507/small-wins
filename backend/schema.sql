@@ -4,6 +4,8 @@ create table users (
   email       text not null,
   name        text,
   avatar_url  text,
+  -- Onboarding tips this person has dismissed (see frontend/src/lib/tips.ts).
+  tips_seen   text[] not null default '{}',
   created_at  timestamptz not null default now(),
   -- Analytics (see backend/analytics.sql): where they first came from (a
   -- utm_source, ?ref= or referring site, set once at sign-up) and when they

@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import type { Topic, Entry, DateRange } from "../types";
 import { getTopics, getEntries, setTopicLayout, deleteTopic } from "../api/client";
@@ -12,6 +12,9 @@ import BackgroundDoodles from "../components/BackgroundDoodles";
 import ActionMenu from "../components/ActionMenu";
 import ConfirmRow from "../components/ConfirmRow";
 import TopicForm from "../components/TopicForm";
+import { useAuth } from "../auth";
+import { ALL_TIPS, topicTip } from "../lib/tips";
+import TipBubble from "../components/TipBubble";
 
 const PRESETS: Preset[] = [
   { key: "30", label: "30d" },
@@ -36,6 +39,8 @@ export default function TopicPage() {
   const [editing, setEditing] = useState(false);
   const [confirmingDelete, setConfirmingDelete] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const { user, markTipsSeen } = useAuth();
+  const addEntryRef = useRef<HTMLButtonElement>(null);
 
   function loadEntries(s: string) {
     getEntries(s).then(setEntries);
@@ -198,7 +203,7 @@ export default function TopicPage() {
       </div>
 
       <div className="toolbar">
-        <button className="primary" onClick={() => setShowForm(true)}>
+        <button className="primary" ref={addEntryRef} onClick={() => setShowForm(true)}>
           + Add entry
         </button>
         <div className="layout-toggle" role="group" aria-label="Tile layout">
@@ -236,6 +241,17 @@ export default function TopicPage() {
         colorIndex={colorIndex}
         onDeleted={() => loadEntries(slug)}
       />
+
+      {user && topicTip(user.tips_seen, showForm) === "log" && (
+        <TipBubble
+          anchor={addEntryRef}
+          label="Tip: log a win"
+          onDismiss={() => markTipsSeen(["log"])}
+          onSkipAll={() => markTipsSeen(ALL_TIPS)}
+        >
+          <p>Every time you do this, add an entry — your graph fills in day by day.</p>
+        </TipBubble>
+      )}
     </>
   );
 }

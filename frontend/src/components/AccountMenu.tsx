@@ -1,16 +1,30 @@
 import { useEffect, useRef, useState } from "react";
+import type { Ref } from "react";
 import { Link } from "react-router-dom";
 import { useAuth } from "../auth";
 import ConfirmRow from "./ConfirmRow";
 
-// Avatar pill in the top corner that opens a small account menu.
-export default function AccountMenu() {
+interface Props {
+  triggerRef?: Ref<HTMLButtonElement>;
+  // Lets a caller (the onboarding tip) know when the menu opens or closes.
+  onOpenChange?: (open: boolean) => void;
+}
+
+// Avatar pill in the top corner that opens a small account menu. triggerRef
+// lets the onboarding tip point at the avatar.
+export default function AccountMenu({ triggerRef, onOpenChange }: Props) {
   const { user, logout, deleteAccount } = useAuth();
   const [open, setOpen] = useState(false);
   const [confirming, setConfirming] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const ref = useRef<HTMLDivElement>(null);
+
+  // Report open/closed so the onboarding tip can hide itself while the menu
+  // is open.
+  useEffect(() => {
+    onOpenChange?.(open);
+  }, [open, onOpenChange]);
 
   function toggle() {
     if (!open) {
@@ -57,6 +71,7 @@ export default function AccountMenu() {
         aria-expanded={open}
         disabled={deleting}
         onClick={toggle}
+        ref={triggerRef}
       >
         {user?.avatar_url ? (
           <img className="account-avatar" src={user.avatar_url} alt="" referrerPolicy="no-referrer" />

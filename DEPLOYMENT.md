@@ -238,6 +238,9 @@ against a Supabase URL.
   Applied to production 2026-10-14. Its header has the run steps.
 - `004_mcp_grants.sql` — Phase 3 Part B, adds the `mcp_grants` table. See
   "Upgrading to MCP grants" above.
+- `005_tips_seen.sql` — onboarding tips, adds `users.tips_seen` and marks
+  every existing user as having seen all tips. Run before deploying the
+  onboarding-tips branch.
 - `006_analytics.sql` — adds `entries.created_at`/`via` and
   `users.signup_source`/`last_seen_at`. Only adds columns, so it's safe to
   run any time before the analytics deploy (the live code ignores them) and

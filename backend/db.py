@@ -245,7 +245,7 @@ def topic_post_docs(user_id, slug):
 
 # --- Users -------------------------------------------------------------------
 
-USER_COLUMNS = "id, email, name, avatar_url"
+USER_COLUMNS = "id, email, name, avatar_url, tips_seen"
 
 
 def upsert_user(google_sub, email, name, avatar_url, signup_source=None):
@@ -277,6 +277,18 @@ def touch_user(user_id):
     row = get_conn().execute(
         f"update users set last_seen_at = now() where id=%s returning {USER_COLUMNS}",
         (user_id,),
+    ).fetchone()
+    return dict(row) if row else None
+
+
+def mark_tips_seen(user_id, tip_ids):
+    """Add tip_ids to the user's dismissed tips (each kept once, sorted) and
+    return the user, or None if they no longer exist."""
+    row = get_conn().execute(
+        "update users set tips_seen = array("
+        "select distinct t from unnest(tips_seen || %s::text[]) as t order by t) "
+        f"where id=%s returning {USER_COLUMNS}",
+        (list(tip_ids), user_id),
     ).fetchone()
     return dict(row) if row else None
 
