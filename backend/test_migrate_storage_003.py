@@ -51,7 +51,6 @@ class FakeStore:
 
 def seed(user_id, image=None, figure=None, slug="workout", entry_id=1):
     conn = db.get_conn()
-    db.load_topics(user_id)  # seeds "workout"
     conn.execute(
         'insert into entries (user_id, topic_slug, id, date, image, "values") '
         "values (%s, %s, %s, '2026-01-01', %s, '{}')",

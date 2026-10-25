@@ -47,7 +47,8 @@ def test_migrate_writes_every_row_for_the_owner(app_ctx, tmp_path, monkeypatch):
     m.migrate(db.get_conn(), {"/api/uploads/a.jpg": "https://cdn/a.jpg"}, owner)
     m.migrate(db.get_conn(), {"/api/uploads/a.jpg": "https://cdn/a.jpg"}, owner)  # idempotent
 
-    assert [t["slug"] for t in db.load_topics(owner)] == ["runs"]
+    # owner also has the fixture's Workout/Journal; this migration only adds "runs".
+    assert {t["slug"] for t in db.load_topics(owner)} == {"workout", "journal", "runs"}
     entry = db.find_entry(owner, "runs", 1)
     assert entry["image"] == "https://cdn/a.jpg"
     assert entry["title"] == "Run"
