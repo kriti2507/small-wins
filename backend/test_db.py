@@ -34,11 +34,10 @@ def test_get_conn_can_query_the_schema(app_ctx):
     assert {"topics", "entries", "posts", "users"} <= names
 
 
-def test_seeds_default_topics_when_the_user_has_none(uid):
+def test_a_new_user_starts_with_no_topics(app_ctx):
     import db
-    topics = db.load_topics(uid)
-    assert [t["slug"] for t in topics] == ["workout", "journal"]
-    assert topics[0]["fields"][0]["key"] == "title"
+    new = db.upsert_user("sub-new", "new@example.com", "New", None)["id"]
+    assert db.load_topics(new) == []
 
 
 def test_add_topic_appends_and_find_topic_reads_back(uid):
