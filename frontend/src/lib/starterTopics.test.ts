@@ -1,5 +1,7 @@
 import { describe, it, expect } from "vitest";
-import { STARTER_TOPICS, MAX_STARTERS, toggleStarter, createStarters } from "./starterTopics";
+import {
+  STARTER_TOPICS, MAX_STARTERS, PREVIEW_DAYS, toggleStarter, createStarters, previewShades,
+} from "./starterTopics";
 import { PALETTES } from "./palette";
 
 describe("STARTER_TOPICS", () => {
@@ -16,6 +18,13 @@ describe("STARTER_TOPICS", () => {
     STARTER_TOPICS.forEach((t) =>
       expect(t.fields[0]).toEqual({ label: "Title", type: "text", direction: "none" }),
     );
+  });
+
+  it("gives every template an icon and a short hint for its note", () => {
+    STARTER_TOPICS.forEach((t) => {
+      expect(t.icon).toBeTruthy();
+      expect(t.hint).toBeTruthy();
+    });
   });
 });
 
@@ -41,6 +50,21 @@ describe("createStarters", () => {
     expect(calls).toEqual(["Workout", "Walk"]);
   });
 
+  it("sends only the topic payload, not the picker's icon and hint", async () => {
+    const sent: object[] = [];
+    await createStarters(["Journal"], async (t) => {
+      sent.push(t);
+    });
+    expect(sent).toEqual([
+      {
+        name: "Journal",
+        color: "purple",
+        layout: "photo-top",
+        fields: [{ label: "Title", type: "text", direction: "none" }],
+      },
+    ]);
+  });
+
   it("stops at the first failure", async () => {
     const calls: string[] = [];
     const add = async (t: { name: string }) => {
@@ -49,5 +73,26 @@ describe("createStarters", () => {
     };
     await expect(createStarters(["Workout", "Journal"], add)).rejects.toThrow("nope");
     expect(calls).toEqual(["Workout"]);
+  });
+});
+
+describe("previewShades", () => {
+  it("gives PREVIEW_DAYS shades, each empty (-1) or a palette index 0-4", () => {
+    const shades = previewShades("Workout");
+    expect(shades).toHaveLength(PREVIEW_DAYS);
+    shades.forEach((s) => expect([-1, 0, 1, 2, 3, 4]).toContain(s));
+  });
+
+  it("is stable for a name and differs between names", () => {
+    expect(previewShades("Sleep")).toEqual(previewShades("Sleep"));
+    expect(previewShades("Sleep")).not.toEqual(previewShades("Walk"));
+  });
+
+  it("mixes empty days with filled ones, like a real month", () => {
+    STARTER_TOPICS.forEach((t) => {
+      const shades = previewShades(t.name);
+      expect(shades.some((s) => s === -1)).toBe(true);
+      expect(shades.some((s) => s >= 2)).toBe(true);
+    });
   });
 });
