@@ -144,7 +144,7 @@ export default function HomePage() {
           onSkipAll={skipAll}
         >
           <p>
-            Here are the aspects you picked. Use ⋯ to rename or delete them,
+            These are your starter aspects. Use ⋯ to rename or delete them,
             or <strong>+ Add more</strong> to track something of your own.
           </p>
         </TipBubble>
