@@ -31,48 +31,8 @@ def get_conn():
     )
 
 
-DEFAULT_TOPICS = [
-    {
-        "slug": "workout",
-        "name": "Workout",
-        "color": "green",
-        "layout": "photo-top",
-        "fields": [
-            {"key": "title", "label": "Title", "type": "text", "direction": "none"},
-            {"key": "duration", "label": "Duration (min)", "type": "number", "direction": "higher"},
-        ],
-    },
-    {
-        "slug": "journal",
-        "name": "Journal",
-        "color": "purple",
-        "layout": "photo-top",
-        "fields": [
-            {"key": "title", "label": "Title", "type": "text", "direction": "none"},
-        ],
-    },
-]
-
-
-def _seed_if_empty(conn, user_id):
-    """Give a user the default topics the first time they have none."""
-    if conn.execute(
-        "select count(*) as c from topics where user_id=%s", (user_id,)
-    ).fetchone()["c"]:
-        return
-    for pos, t in enumerate(DEFAULT_TOPICS):
-        conn.execute(
-            "insert into topics (user_id, slug, name, color, layout, fields, position) "
-            "values (%s, %s, %s, %s, %s, %s, %s) on conflict (user_id, slug) do nothing",
-            (user_id, t["slug"], t["name"], t["color"], t["layout"],
-             Jsonb(t["fields"]), pos),
-        )
-
-
 def load_topics(user_id):
-    conn = get_conn()
-    _seed_if_empty(conn, user_id)
-    rows = conn.execute(
+    rows = get_conn().execute(
         "select slug, name, color, layout, fields from topics "
         "where user_id=%s order by position",
         (user_id,),

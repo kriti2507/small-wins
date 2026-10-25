@@ -6,13 +6,49 @@ import pytest
 TEST_DATABASE_URL = os.environ.get("TEST_DATABASE_URL")
 SCHEMA_PATH = os.path.join(os.path.dirname(__file__), "schema.sql")
 
+# The two topics new accounts used to be given automatically. New accounts now
+# pick their own, but most tests are written against these, so fixtures add them.
+STARTER_TOPICS = [
+    {
+        "slug": "workout",
+        "name": "Workout",
+        "color": "green",
+        "layout": "photo-top",
+        "fields": [
+            {"key": "title", "label": "Title", "type": "text", "direction": "none"},
+            {"key": "duration", "label": "Duration (min)", "type": "number", "direction": "higher"},
+        ],
+    },
+    {
+        "slug": "journal",
+        "name": "Journal",
+        "color": "purple",
+        "layout": "photo-top",
+        "fields": [
+            {"key": "title", "label": "Title", "type": "text", "direction": "none"},
+        ],
+    },
+]
 
-def make_user(sub, email):
-    """Insert (or refresh) a users row and return its id."""
+
+def seed_topics(user_id):
+    """Give user_id the Workout and Journal topics (skipping any they have)."""
     import app
     import db
     with app.app.app_context():
-        return db.upsert_user(sub, email, None, None)["id"]
+        for t in STARTER_TOPICS:
+            if db.find_topic(user_id, t["slug"]) is None:
+                db.add_topic(user_id, t)
+
+
+def make_user(sub, email):
+    """Insert (or refresh) a users row, give it the starter topics, and return its id."""
+    import app
+    import db
+    with app.app.app_context():
+        user_id = db.upsert_user(sub, email, None, None)["id"]
+    seed_topics(user_id)
+    return user_id
 
 
 def make_grant(user_id, redeemed=True):
@@ -91,6 +127,7 @@ def client(test_db, anon_client):
     import db
     with app.app.app_context():
         user = db.upsert_user("sub-test", "test@example.com", "Test", None)
+    seed_topics(user["id"])
     with anon_client.session_transaction() as s:
         s["user_id"] = user["id"]
     return anon_client

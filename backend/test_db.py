@@ -1,16 +1,22 @@
 import pytest
 
+from conftest import seed_topics
+
 
 @pytest.fixture()
 def uid(app_ctx):
     import db
-    return db.upsert_user("sub-a", "a@example.com", "A", None)["id"]
+    user_id = db.upsert_user("sub-a", "a@example.com", "A", None)["id"]
+    seed_topics(user_id)
+    return user_id
 
 
 @pytest.fixture()
 def other(app_ctx):
     import db
-    return db.upsert_user("sub-b", "b@example.com", "B", None)["id"]
+    user_id = db.upsert_user("sub-b", "b@example.com", "B", None)["id"]
+    seed_topics(user_id)
+    return user_id
 
 
 BOOKS = {"slug": "books", "name": "Books", "color": "red", "layout": "photo-top",
@@ -28,23 +34,15 @@ def test_get_conn_can_query_the_schema(app_ctx):
     assert {"topics", "entries", "posts", "users"} <= names
 
 
-def test_seeds_default_topics_when_the_user_has_none(uid):
+def test_a_new_user_starts_with_no_topics(app_ctx):
     import db
-    topics = db.load_topics(uid)
-    assert [t["slug"] for t in topics] == ["workout", "journal"]
-    assert topics[0]["fields"][0]["key"] == "title"
-
-
-def test_seeding_is_per_user(uid, other):
-    import db
-    db.add_topic(uid, BOOKS)  # uid now has topics, so no seed for uid
-    assert [t["slug"] for t in db.load_topics(uid)] == ["books"]
-    assert [t["slug"] for t in db.load_topics(other)] == ["workout", "journal"]
+    new = db.upsert_user("sub-new", "new@example.com", "New", None)["id"]
+    assert db.load_topics(new) == []
 
 
 def test_add_topic_appends_and_find_topic_reads_back(uid):
     import db
-    db.load_topics(uid)  # seeds "workout" and "journal" at positions 0 and 1
+    db.load_topics(uid)  # the fixture added "workout" and "journal" at positions 0 and 1
     db.add_topic(uid, BOOKS)
     assert [t["slug"] for t in db.load_topics(uid)] == ["workout", "journal", "books"]
     found = db.find_topic(uid, "books")

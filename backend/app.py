@@ -296,8 +296,8 @@ def delete_topic(slug):
     topics = db.load_topics(g.user_id)
     if not any(t["slug"] == slug for t in topics):
         return jsonify({"error": "Unknown topic."}), 404
-    # An empty topic list gets re-seeded with the defaults on the next load
-    # (db._seed_if_empty), so deleting the last one wouldn't stick.
+    # New accounts start with no topics and pick some on the home page; keeping
+    # at least one means only brand-new accounts ever see that picker.
     if len(topics) == 1:
         return jsonify({"error": "You need at least one aspect."}), 400
 

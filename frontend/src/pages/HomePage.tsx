@@ -14,6 +14,7 @@ import { useAuth } from "../auth";
 import { ALL_TIPS, homeTip } from "../lib/tips";
 import TipBubble from "../components/TipBubble";
 import ConnectorUrl from "../components/ConnectorUrl";
+import StarterPicker from "../components/StarterPicker";
 
 // "YYYY-MM" for the month `delta` months away from `month`.
 function shiftMonth(month: string, delta: number): string {
@@ -29,6 +30,9 @@ function monthRange(month: string): DateRange {
 
 export default function HomePage() {
   const [topicsData, setTopicsData] = useState<CapsuleTopicData[]>([]);
+  // An empty list means "not loaded yet" until this flips; after it, it means a
+  // brand-new account that hasn't picked its topics.
+  const [loaded, setLoaded] = useState(false);
   const [showForm, setShowForm] = useState(false);
   const thisMonth = isoDate(new Date()).slice(0, 7);
   const [month, setMonth] = useState(thisMonth);
@@ -57,7 +61,10 @@ export default function HomePage() {
             return { topic, colorIndex, entries, scoreById };
           }),
         ),
-      ).then(setTopicsData),
+      ).then((data) => {
+        setTopicsData(data);
+        setLoaded(true);
+      }),
     );
   }
 
@@ -65,6 +72,17 @@ export default function HomePage() {
     document.title = "Small Wins";
     load();
   }, []);
+
+  if (loaded && topicsData.length === 0) {
+    return (
+      <>
+        <BackgroundDoodles />
+        <AccountMenu triggerRef={avatarRef} onOpenChange={setMenuOpen} />
+        <h1>Small Wins</h1>
+        <StarterPicker onDone={load} />
+      </>
+    );
+  }
 
   return (
     <>
@@ -126,7 +144,7 @@ export default function HomePage() {
           onSkipAll={skipAll}
         >
           <p>
-            We've started you with a couple of aspects. Use ⋯ to rename or delete them,
+            These are your starter aspects. Use ⋯ to rename or delete them,
             or <strong>+ Add more</strong> to track something of your own.
           </p>
         </TipBubble>
