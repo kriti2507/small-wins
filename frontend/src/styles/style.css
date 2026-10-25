@@ -1634,3 +1634,48 @@ a.back:hover {
     animation-play-state: paused;
   }
 }
+
+/* New-account topic picker (StarterPicker). */
+.starter-picker {
+  max-width: 40rem;
+}
+
+.starter-hint {
+  font-family: var(--font-hand);
+  font-size: 1.4rem;
+  color: var(--ink-muted);
+  margin-top: -0.4rem;
+}
+
+.starter-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 0.75rem;
+  margin: 1.25rem 0;
+}
+
+.starter-card {
+  min-height: 64px;
+  font-family: var(--font-display);
+  font-size: 1.1rem;
+  background: var(--card);
+  border: 2px solid var(--border);
+  color: var(--ink);
+  cursor: pointer;
+  transition: border-color 0.2s ease, background 0.2s ease;
+}
+
+.starter-card:hover:not(:disabled) {
+  border-color: var(--topic-color);
+}
+
+.starter-card.on {
+  background: var(--topic-tint);
+  border-color: var(--topic-color);
+  color: var(--topic-color);
+}
+
+.starter-card:disabled:not(.on) {
+  opacity: 0.45;
+  cursor: default;
+}
