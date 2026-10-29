@@ -261,3 +261,110 @@ def test_no_answers_at_all_still_drafts_the_titles():
     assert d["topic"] is None and d["suggestions"] == []
     assert d["drafts"] == {"workout": {"title": "ran 5k"}, "journal": {"title": "ran 5k"},
                            "reading": {"title": "ran 5k"}, "run": {}}
+
+
+# --- Jev client and parse -----------------------------------------------------
+
+class FakeResponse:
+    def __init__(self, data, status=200):
+        self.data, self.status_code = data, status
+
+    def raise_for_status(self):
+        if self.status_code >= 400:
+            raise qa.requests.HTTPError(f"{self.status_code}")
+
+    def json(self):
+        if isinstance(self.data, Exception):
+            raise self.data
+        return self.data
+
+
+def test_ask_jev_needs_a_key(monkeypatch):
+    monkeypatch.delenv("TYPESAFE_API_KEY", raising=False)
+    with pytest.raises(qa.JevUnavailable):
+        qa.ask_jev({}, {})
+
+
+def test_ask_jev_posts_the_questions_and_returns_the_answers(monkeypatch):
+    monkeypatch.setenv("TYPESAFE_API_KEY", "k-123")
+    calls = []
+
+    def post(url, json, headers, timeout):
+        calls.append((url, json, headers, timeout))
+        return FakeResponse({"answers": {"topic": choice("workout", 0.9)}})
+
+    monkeypatch.setattr(qa.requests, "post", post)
+    assert qa.ask_jev({"message": "hi"}, {"topic": {}}) == {"topic": choice("workout", 0.9)}
+    url, body, headers, timeout = calls[0]
+    assert url == "https://api.typesafe.ai/v1/systemone"
+    assert body == {"model": "jev-latest", "state": {"message": "hi"}, "questions": {"topic": {}}}
+    assert headers["Authorization"] == "Bearer k-123"
+    assert timeout == qa.JEV_TIMEOUT_SECONDS
+
+
+@pytest.mark.parametrize("response", [
+    FakeResponse({"error": "bad"}, status=422),
+    FakeResponse(ValueError("not json")),
+    FakeResponse({"no": "answers"}),
+    FakeResponse({"answers": ["not", "a", "dict"]}),
+])
+def test_ask_jev_turns_failures_into_unavailable(monkeypatch, response):
+    monkeypatch.setenv("TYPESAFE_API_KEY", "k-123")
+    monkeypatch.setattr(qa.requests, "post", lambda *a, **kw: response)
+    with pytest.raises(qa.JevUnavailable):
+        qa.ask_jev({}, {})
+
+
+def test_ask_jev_turns_timeouts_into_unavailable(monkeypatch):
+    monkeypatch.setenv("TYPESAFE_API_KEY", "k-123")
+
+    def post(*a, **kw):
+        raise qa.requests.Timeout("slow")
+
+    monkeypatch.setattr(qa.requests, "post", post)
+    with pytest.raises(qa.JevUnavailable):
+        qa.ask_jev({}, {})
+
+
+def test_parse_asks_jev_once_and_drafts_from_its_answers(monkeypatch):
+    seen = []
+
+    def ask(state, questions):
+        seen.append((state, questions))
+        return {"topic": choice("workout", 0.9), "f:workout:duration": choice("n1", 0.9)}
+
+    monkeypatch.setattr(qa, "ask_jev", ask)
+    d = qa.parse(TOPICS, "ran 5k in 27 min", TODAY)
+    assert d["topic"] == "workout"
+    assert d["drafts"]["workout"]["duration"] == 27
+    assert len(seen) == 1 and seen[0][0]["message"] == "ran 5k in 27 min"
+    assert "f:workout:duration" in seen[0][1]
+
+
+def test_parse_without_jev_still_drafts(monkeypatch):
+    def ask(state, questions):
+        raise qa.JevUnavailable("no key")
+
+    monkeypatch.setattr(qa, "ask_jev", ask)
+    d = qa.parse(TOPICS, "journaled yesterday", TODAY)
+    assert d["topic"] is None and d["suggestions"] == []
+    assert d["date"] == "2026-10-28"
+    assert d["drafts"]["journal"] == {"title": "journaled yesterday"}
+
+
+def test_parse_with_no_topics_skips_jev(monkeypatch):
+    monkeypatch.setattr(qa, "ask_jev", lambda *a: pytest.fail("asked Jev"))
+    assert qa.parse([], "ran", TODAY)["drafts"] == {}
+
+
+@pytest.mark.parametrize("value, expected", [
+    ("2026-10-29", date(2026, 10, 29)),
+    ("2026-10-30", date(2026, 10, 30)),  # ahead of the server's day: another timezone
+    ("2026-10-28", date(2026, 10, 28)),
+    ("2026-10-20", TODAY),
+    ("not a date", TODAY),
+    (None, TODAY),
+    (20261029, TODAY),
+])
+def test_parse_today_trusts_the_client_within_a_day(value, expected):
+    assert qa.parse_today(value, TODAY) == expected

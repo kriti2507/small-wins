@@ -7,8 +7,14 @@ is never invented. One Jev request asks every question at once: which topic,
 and, for every field of every topic, which candidate fills it. A draft for
 each topic comes back, so switching topics in the UI needs no second call.
 """
+import logging
+import os
 import re
 from datetime import date, timedelta
+
+import requests
+
+log = logging.getLogger(__name__)
 
 # --- Candidate extraction -----------------------------------------------------
 
@@ -355,3 +361,60 @@ def to_draft(topics, cands, answers, today):
         "date": _draft_date(cands, answers, today),
         "drafts": {t["slug"]: _topic_draft(t, cands, answers, text) for t in topics},
     }
+
+
+# --- Jev ----------------------------------------------------------------------
+
+JEV_URL = "https://api.typesafe.ai/v1/systemone"
+JEV_MODEL = "jev-latest"
+JEV_TIMEOUT_SECONDS = 4  # past this the user is better off picking the topic
+MAX_TEXT_CHARS = 500
+
+
+class JevUnavailable(Exception):
+    """No key, or Jev didn't answer usefully; quick add carries on without it."""
+
+
+def ask_jev(state, questions):
+    """Jev's answers ({question id: answer}) to one batch of questions."""
+    key = os.environ.get("TYPESAFE_API_KEY")
+    if not key:
+        raise JevUnavailable("TYPESAFE_API_KEY is not set")
+    try:
+        res = requests.post(
+            JEV_URL,
+            json={"model": JEV_MODEL, "state": state, "questions": questions},
+            headers={"Authorization": f"Bearer {key}"},
+            timeout=JEV_TIMEOUT_SECONDS,
+        )
+        res.raise_for_status()
+        answers = res.json()["answers"]
+    except (requests.RequestException, ValueError, KeyError, TypeError) as e:
+        raise JevUnavailable(f"{type(e).__name__}: {e}") from e
+    if not isinstance(answers, dict):
+        raise JevUnavailable("answers is not an object")
+    return answers
+
+
+def parse(topics, text, today):
+    """The draft for text (see to_draft). Without Jev the draft still comes
+    back, just with no topic picked and only the titles filled in."""
+    cands = extract_candidates(text, today)
+    answers = {}
+    if topics:
+        try:
+            answers = ask_jev(build_state(topics, text, today), build_questions(topics, cands, today))
+        except JevUnavailable as e:
+            log.warning("quick add without Jev: %s", e)
+    return to_draft(topics, cands, answers, today)
+
+
+def parse_today(value, server_today=None):
+    """The user's local day as their browser sent it; the server's day if it's
+    missing, malformed or more than a day off (no timezone is further)."""
+    server_today = server_today or date.today()
+    try:
+        d = date.fromisoformat(value)
+    except (TypeError, ValueError):
+        return server_today
+    return d if abs((d - server_today).days) <= 1 else server_today
