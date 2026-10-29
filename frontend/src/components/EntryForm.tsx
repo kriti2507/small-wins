@@ -1,6 +1,6 @@
 import { useState } from "react";
 import type { Topic } from "../types";
-import { parsePace } from "../lib/pace";
+import { fieldPayload } from "../lib/quickAdd";
 import { addEntry, uploadImage } from "../api/client";
 import EntryFields from "./EntryFields";
 
@@ -35,20 +35,12 @@ export default function EntryForm({ topic, onAdded, onCancel }: Props) {
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError("");
-    const data: Record<string, string | number> = { date: values.date || "" };
-    for (const f of topic.fields) {
-      const raw = values[f.key] ?? "";
-      if (f.type === "pace" && raw) {
-        const sec = parsePace(raw);
-        if (isNaN(sec)) {
-          alert(`${f.label}: use min'sec, e.g. 8'35" or 8:35`);
-          return;
-        }
-        data[f.key] = sec;
-      } else {
-        data[f.key] = raw;
-      }
+    const payload = fieldPayload(topic, values);
+    if ("error" in payload) {
+      alert(payload.error);
+      return;
     }
+    const { data } = payload;
 
     try {
       if (file) {
