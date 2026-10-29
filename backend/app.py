@@ -9,6 +9,7 @@ from flask import Flask, g, jsonify, redirect, request
 import auth
 import db
 import grants
+import quick_add
 import storage
 
 # Local dev reads DB/storage config from backend/.env; on Vercel these come
@@ -528,6 +529,24 @@ def delete_orphaned_images(candidates):
                 pass  # GIFs and older uploads have no thumbnail
         except Exception as exc:
             app.logger.warning("failed to delete storage object for %s: %s", url, exc)
+
+
+# --- Quick add -------------------------------------------------------------
+
+@app.route("/api/quick-add/parse", methods=["POST"])
+@auth.login_required
+def quick_add_parse():
+    """Turn one line of text into a draft entry; saves nothing (see
+    quick_add.py). The client saves the confirmed draft as a normal entry."""
+    data = request.get_json(force=True, silent=True) or {}
+    text = data.get("text")
+    text = text.strip() if isinstance(text, str) else ""
+    if not text:
+        return jsonify({"error": "Type a win first."}), 400
+    if len(text) > quick_add.MAX_TEXT_CHARS:
+        return jsonify({"error": f"Keep it under {quick_add.MAX_TEXT_CHARS} characters."}), 400
+    today = quick_add.parse_today(data.get("today"))
+    return jsonify(quick_add.parse(db.load_topics(g.user_id), text, today))
 
 
 # --- Export ----------------------------------------------------------------

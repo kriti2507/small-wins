@@ -1190,3 +1190,35 @@ def test_patch_topic_fields_rejects_bad_input_and_changes_nothing(client):
     assert client.patch("/api/topics/workout", json={
         "fields": [{"key": "title", "label": "x" * 25_000}]}).status_code == 400
     assert workout_fields(client) == before
+
+
+# --- Quick add ----------------------------------------------------------------
+
+def test_quick_add_parse_returns_a_draft(client, monkeypatch):
+    import quick_add
+    from datetime import date
+
+    def ask(state, questions):
+        assert [t["name"] for t in state["topics"]] == ["Workout", "Journal"]
+        return {
+            "topic": {"type": "choice", "choice": "workout", "probabilities": {"workout": 0.9}},
+            "f:workout:duration": {"type": "choice", "choice": "n1", "probabilities": {"n1": 0.9}},
+        }
+
+    monkeypatch.setattr(quick_add, "ask_jev", ask)
+    today = date.today().isoformat()
+    res = client.post("/api/quick-add/parse", json={"text": "  ran 5k in 27 min ", "today": today})
+    assert res.status_code == 200
+    body = res.get_json()
+    assert body["topic"] == "workout"
+    assert body["date"] == today
+    assert body["drafts"]["workout"] == {"title": "ran 5k in 27 min", "duration": 27}
+
+
+@pytest.mark.parametrize("payload", [{}, {"text": "   "}, {"text": 5}, {"text": "x" * 501}])
+def test_quick_add_parse_rejects_empty_or_long_text(client, monkeypatch, payload):
+    import quick_add
+    monkeypatch.setattr(quick_add, "ask_jev", lambda *a: pytest.fail("asked Jev"))
+    res = client.post("/api/quick-add/parse", json=payload)
+    assert res.status_code == 400
+    assert res.get_json()["error"]
