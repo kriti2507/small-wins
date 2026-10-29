@@ -15,6 +15,7 @@ import { ALL_TIPS, homeTip } from "../lib/tips";
 import TipBubble from "../components/TipBubble";
 import ConnectorUrl from "../components/ConnectorUrl";
 import StarterPicker from "../components/StarterPicker";
+import QuickAdd from "../components/QuickAdd";
 
 // "YYYY-MM" for the month `delta` months away from `month`.
 function shiftMonth(month: string, delta: number): string {
@@ -93,6 +94,8 @@ export default function HomePage() {
         A little diary for the good things. Track the small wins across the
         different parts of your life, and watch each one fill in over time.
       </p>
+
+      {topicsData.length > 0 && <QuickAdd topics={topicsData.map((d) => d.topic)} onSaved={load} />}
 
       <section className="capsule">
         <div className="capsule-head">
