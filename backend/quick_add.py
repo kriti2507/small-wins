@@ -200,3 +200,158 @@ def extract_candidates(text, today):
     taken = []
     found_dates = _dates(text, today, taken)
     return {"numbers": _numbers(text, taken), "dates": found_dates, "phrases": _phrases(text)}
+
+
+# --- Questions and drafts -----------------------------------------------------
+
+NONE = "_none"  # criteria key for "nothing fits"; slugs never start with "_"
+TOPIC_THRESHOLD = 0.6  # below this the UI asks "Which topic?"
+FIELD_THRESHOLD = 0.5  # below this a field (or the date) is left to the user
+SUGGESTION_MIN = 0.1  # topics this likely lead the "Which topic?" chips
+MAX_SUGGESTIONS = 3
+
+# A unit named in a field's label -> what the field takes, first match wins.
+# A bare "Duration" or "Time" reads as minutes, "Distance" as km.
+FIELD_TARGETS = (
+    (r"\b(min|mins|minutes?)\b", ("time", 1)),
+    (r"\b(hours?|hrs?)\b", ("time", 60)),
+    (r"\b(sec|secs|seconds?)\b", ("time", 1 / 60)),
+    (r"\b(km|kms|kilomet(?:er|re)s?)\b", ("distance", 1)),
+    (r"\b(mi|miles?)\b", ("distance", KM_PER_MILE)),
+    (r"\b(met(?:er|re)s?)\b", ("distance", 0.001)),
+    (r"\b(duration|time)\b", ("time", 1)),
+    (r"\bdistance\b", ("distance", 1)),
+)
+
+
+def field_target(label):
+    """What a number field measures, from its label: ("time"|"distance",
+    factor from the base unit), ("count", unit name), or None for anything."""
+    label = label.lower()
+    for pattern, target in FIELD_TARGETS:
+        if re.search(pattern, label):
+            return target
+    for word in re.findall(r"[a-z-]+", label):
+        if word in COUNT_UNITS:
+            return ("count", COUNT_UNITS[word])
+    return None
+
+
+def _fit(number, f):
+    """number's value in f's unit, or None if f can't take it."""
+    if f["type"] == "pace" or number["kind"] == "pace":
+        return number["value"] if f["type"] == number["kind"] == "pace" else None
+    target = field_target(f["label"])
+    if number["kind"] is None or target is None:
+        return number["value"]
+    if target[0] == "count":
+        return number["value"] if number["kind"] == "count" and number["unit"] == target[1] else None
+    kind, factor = target
+    return round(number["value"] / factor, 2) if number["kind"] == kind else None
+
+
+def field_options(f, cands):
+    """{candidate id: (value for f, description for Jev)} for every candidate
+    f could take."""
+    if f["type"] == "text":
+        return {p["id"]: (p["text"], p["text"]) for p in cands["phrases"]}
+    out = {}
+    for n in cands["numbers"]:
+        value = _fit(n, f)
+        if value is not None:
+            out[n["id"]] = (value, f"{n['label']} (written “{n['span']}”)")
+    return out
+
+
+def build_state(topics, text, today):
+    return {
+        "message": text,
+        "today": today.isoformat(),
+        "topics": [{"name": t["name"], "fields": [f["label"] for f in t["fields"]]} for t in topics],
+    }
+
+
+def build_questions(topics, cands, today):
+    """Every question at once: the topic, each field of every topic (asked
+    as if the win were logged there; only the chosen topic's are used), and
+    the day when the text names one."""
+    questions = {"topic": {
+        "type": "choice",
+        "instructions": "The user typed `message` to log a small win in their diary. "
+                        "Which of their topics should it be logged under?",
+        "criteria": {
+            **{t["slug"]: f"{t['name']}: the win belongs under “{t['name']}”, which records "
+                          + ", ".join(f["label"] for f in t["fields"]) for t in topics},
+            NONE: "None of the topics fits this win",
+        },
+    }}
+    for t in topics:
+        for f in t["fields"]:
+            opts = field_options(f, cands)
+            if not opts:
+                continue
+            if f["type"] == "text":
+                ask = f"which part of the message is the best “{f['label']}” for the entry?"
+            else:
+                ask = f"which value from the message is its “{f['label']}”?"
+            questions[f"f:{t['slug']}:{f['key']}"] = {
+                "type": "choice",
+                "instructions": f"If the win in `message` is logged under “{t['name']}”, {ask}",
+                "criteria": {**{cid: desc for cid, (_, desc) in opts.items()},
+                             NONE: f"The message gives no {f['label']}"},
+            }
+    if cands["dates"]:
+        questions["date"] = {
+            "type": "choice",
+            "instructions": "On which day did the win in `message` happen? `today` is the day it was typed.",
+            "criteria": {**{d["id"]: f"{d['date']} (written “{d['span']}”)" for d in cands["dates"]},
+                         "today": f"{today.isoformat()}, the day it was typed"},
+        }
+    return questions
+
+
+def _chosen(answers, qid):
+    """(choice, its probability) for a choice answer, or (None, 0)."""
+    a = answers.get(qid)
+    if not isinstance(a, dict):
+        return None, 0
+    c = a.get("choice")
+    probs = a.get("probabilities") or {}
+    return c, probs.get(c, 0) if isinstance(probs, dict) else 0
+
+
+def _topic_draft(t, cands, answers, text):
+    values = {}
+    for f in t["fields"]:
+        opts = field_options(f, cands)
+        c, p = _chosen(answers, f"f:{t['slug']}:{f['key']}")
+        if c in opts and p >= FIELD_THRESHOLD:
+            values[f["key"]] = opts[c][0]
+    first_text = next((f for f in t["fields"] if f["type"] == "text"), None)
+    if first_text and first_text["key"] not in values:
+        values[first_text["key"]] = text
+    return values
+
+
+def _draft_date(cands, answers, today):
+    by_id = {d["id"]: d["date"] for d in cands["dates"]}
+    c, p = _chosen(answers, "date")
+    if p >= FIELD_THRESHOLD and (c in by_id or c == "today"):
+        return by_id.get(c, today.isoformat())
+    return cands["dates"][0]["date"] if len(cands["dates"]) == 1 else today.isoformat()
+
+
+def to_draft(topics, cands, answers, today):
+    """The parse response: the likely topic (None when unsure), suggestions
+    for the topic chips, the day, and a draft of field values per topic."""
+    slugs = [t["slug"] for t in topics]
+    text = cands["phrases"][0]["text"] if cands["phrases"] else ""
+    c, p = _chosen(answers, "topic")
+    probs = (answers.get("topic") or {}).get("probabilities") or {}
+    ranked = sorted((s for s in slugs if probs.get(s, 0) >= SUGGESTION_MIN), key=lambda s: -probs[s])
+    return {
+        "topic": c if c in slugs and p >= TOPIC_THRESHOLD else None,
+        "suggestions": ranked[:MAX_SUGGESTIONS],
+        "date": _draft_date(cands, answers, today),
+        "drafts": {t["slug"]: _topic_draft(t, cands, answers, text) for t in topics},
+    }

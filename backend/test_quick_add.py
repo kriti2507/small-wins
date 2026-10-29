@@ -114,3 +114,150 @@ def test_phrases_are_the_whole_text_then_its_clauses():
 
 def test_a_single_clause_is_one_phrase():
     assert phrases("made lasagna") == ["made lasagna"]
+
+
+# --- Fields, questions and drafts ---------------------------------------------
+
+def field(key, label, type="number"):
+    return {"key": key, "label": label, "type": type, "direction": "higher"}
+
+
+TITLE = field("title", "Title", "text")
+TOPICS = [
+    {"slug": "workout", "name": "Workout", "fields": [TITLE, field("duration", "Duration (min)")]},
+    {"slug": "journal", "name": "Journal", "fields": [TITLE]},
+    {"slug": "reading", "name": "Reading", "fields": [TITLE, field("pages", "Pages")]},
+    {"slug": "run", "name": "Run", "fields": [field("distance", "Distance (km)"), field("pace", "Pace", "pace")]},
+]
+
+
+def options(text, f):
+    cands = qa.extract_candidates(text, TODAY)
+    return {cid: value for cid, (value, _) in qa.field_options(f, cands).items()}
+
+
+def test_options_convert_to_the_field_unit():
+    assert options("walked 1h 20m", field("d", "Duration (min)")) == {"n0": 80}
+    assert options("walked 1h 20m", field("h", "Hours")) == {"n0": 1.33}
+    assert options("ran 5000 meters", field("k", "Distance (km)")) == {"n0": 5}
+
+
+def test_a_count_field_takes_only_its_unit_or_a_bare_number():
+    text = "read 30 pages in 45 min, chapter 4"
+    assert options(text, field("p", "Pages")) == {"n0": 30, "n2": 4}
+    assert options(text, field("d", "Duration (min)")) == {"n1": 45, "n2": 4}
+
+
+def test_a_field_without_a_unit_takes_any_number():
+    assert options("ran 5k in 27 min", field("x", "Effort")) == {"n0": 5, "n1": 27}
+
+
+def test_only_pace_fields_take_paces():
+    text = "5k in 27:30"
+    assert options(text, field("p", "Pace", "pace")) == {"n2": 1650}
+    assert options(text, field("d", "Duration (min)")) == {"n1": 27.5}
+
+
+def test_text_fields_take_phrases():
+    assert options("ran 5k, felt great", TITLE) == {"p0": "ran 5k, felt great", "p1": "ran 5k", "p2": "felt great"}
+
+
+def questions(text):
+    return qa.build_questions(TOPICS, qa.extract_candidates(text, TODAY), TODAY)
+
+
+def test_the_topic_question_lists_every_topic_and_none():
+    q = questions("ran 5k in 27 min")["topic"]
+    assert q["type"] == "choice"
+    assert set(q["criteria"]) == {"workout", "journal", "reading", "run", "_none"}
+    assert "Duration (min)" in q["criteria"]["workout"]
+
+
+def test_each_field_gets_a_question_over_the_values_it_could_take():
+    q = questions("ran 5k in 27 min")
+    assert set(q["f:workout:duration"]["criteria"]) == {"n1", "_none"}
+    assert set(q["f:run:distance"]["criteria"]) == {"n0", "_none"}
+    assert set(q["f:workout:title"]["criteria"]) == {"p0", "_none"}
+    assert "5 km" in q["f:run:distance"]["criteria"]["n0"]
+    # Nothing in the text could be a page count or a pace.
+    assert "f:reading:pages" not in q and "f:run:pace" not in q
+
+
+def test_the_date_question_only_comes_with_a_date():
+    assert "date" not in questions("ran 5k")
+    assert set(questions("ran 5k yesterday")["date"]["criteria"]) == {"d0", "today"}
+
+
+def test_state_carries_the_message_and_topics():
+    state = qa.build_state(TOPICS, "ran 5k", TODAY)
+    assert state["message"] == "ran 5k"
+    assert state["today"] == "2026-10-29"
+    assert state["topics"][0] == {"name": "Workout", "fields": ["Title", "Duration (min)"]}
+
+
+def choice(c, p, others=None):
+    return {"type": "choice", "choice": c, "probabilities": {c: p, **(others or {})}}
+
+
+def draft(text, answers):
+    return qa.to_draft(TOPICS, qa.extract_candidates(text, TODAY), answers, TODAY)
+
+
+def test_a_confident_answer_makes_a_full_draft():
+    d = draft("ran 5k in 27 min, legs felt great", {
+        "topic": choice("workout", 0.9, {"run": 0.08}),
+        "f:workout:title": choice("p1", 0.8),
+        "f:workout:duration": choice("n1", 0.95),
+        "f:run:distance": choice("n0", 0.9),
+    })
+    assert d["topic"] == "workout"
+    assert d["suggestions"] == ["workout"]
+    assert d["date"] == "2026-10-29"
+    assert d["drafts"]["workout"] == {"title": "ran 5k in 27 min", "duration": 27}
+    # Every topic gets a draft, so the user can switch without asking again.
+    assert d["drafts"]["run"] == {"distance": 5}
+    assert d["drafts"]["journal"] == {"title": "ran 5k in 27 min, legs felt great"}
+
+
+def test_an_unsure_topic_is_left_for_the_user_with_suggestions():
+    d = draft("did a thing", {"topic": choice("workout", 0.45, {"run": 0.4, "reading": 0.05})})
+    assert d["topic"] is None
+    assert d["suggestions"] == ["workout", "run"]
+
+
+def test_none_of_these_means_no_topic():
+    d = draft("did a thing", {"topic": choice("_none", 0.9, {"journal": 0.1})})
+    assert d["topic"] is None
+    assert d["suggestions"] == ["journal"]
+
+
+def test_an_unsure_field_stays_blank():
+    d = draft("ran 5k in 27 min", {"topic": choice("workout", 0.9), "f:workout:duration": choice("n1", 0.3)})
+    assert d["drafts"]["workout"] == {"title": "ran 5k in 27 min"}
+
+
+def test_a_field_answer_naming_an_unknown_candidate_is_ignored():
+    d = draft("ran 5k in 27 min", {"f:workout:duration": choice("n9", 0.9)})
+    assert "duration" not in d["drafts"]["workout"]
+
+
+def test_the_title_falls_back_to_the_whole_text():
+    d = draft("ran 5k, felt great", {"f:workout:title": choice("_none", 0.9)})
+    assert d["drafts"]["workout"]["title"] == "ran 5k, felt great"
+
+
+def test_the_date_comes_from_the_answer():
+    assert draft("swam yesterday", {"date": choice("d0", 0.9)})["date"] == "2026-10-28"
+    assert draft("swam yesterday", {"date": choice("today", 0.9)})["date"] == "2026-10-29"
+
+
+def test_without_a_date_answer_a_single_date_found_is_used():
+    assert draft("swam yesterday", {})["date"] == "2026-10-28"
+    assert draft("swam yesterday, ran on monday", {})["date"] == "2026-10-29"
+
+
+def test_no_answers_at_all_still_drafts_the_titles():
+    d = draft("ran 5k", {})
+    assert d["topic"] is None and d["suggestions"] == []
+    assert d["drafts"] == {"workout": {"title": "ran 5k"}, "journal": {"title": "ran 5k"},
+                           "reading": {"title": "ran 5k"}, "run": {}}
