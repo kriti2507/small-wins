@@ -422,8 +422,14 @@ def add_entry(slug):
 
     if len(json.dumps(entry)) > MAX_ENTRY_BYTES:
         return jsonify({"error": "That entry is too large."}), 400
+    # Optional: quick add saves what the user typed as the post in one go.
+    body = data.get("body")
+    if body is not None and not valid_body(body):
+        return jsonify({"error": "Invalid post body."}), 400
     db.save_entry(g.user_id, slug, entry, via=g.via)
-    return jsonify(entry), 201
+    if body is not None:
+        db.save_post(g.user_id, slug, entry["id"], body)
+    return jsonify(with_body(slug, entry)), 201
 
 
 @app.route("/api/topics/<slug>/entries/<int:entry_id>", methods=["GET"])

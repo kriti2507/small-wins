@@ -158,6 +158,20 @@ def test_entry_without_post_has_no_body(client):
     assert "body" not in single.get_json()
 
 
+def test_new_entry_can_carry_its_post_body(client):
+    res = client.post("/api/topics/workout/entries", json={"date": "2026-07-09", "title": "Run", "body": DOC})
+    assert res.status_code == 201
+    assert res.get_json()["body"] == DOC
+    single = client.get(f"/api/topics/workout/entries/{res.get_json()['id']}")
+    assert single.get_json()["body"] == DOC
+
+
+def test_new_entry_with_a_bad_body_is_not_saved(client):
+    res = client.post("/api/topics/workout/entries", json={"date": "2026-07-09", "title": "Run", "body": "x"})
+    assert res.status_code == 400
+    assert client.get("/api/topics/workout/entries").get_json() == []
+
+
 def test_unknown_topic_and_entry_404(client):
     assert client.get("/api/topics/nope/entries").status_code == 404
     assert client.get("/api/topics/workout/entries/999").status_code == 404
