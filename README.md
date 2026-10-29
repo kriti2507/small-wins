@@ -25,6 +25,8 @@ The backend talks to Supabase (Postgres + Storage). Copy
 Sign-in uses Google locally too: set `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`
 and `SECRET_KEY`, and add the local callback URL to the
 OAuth client's authorized redirect URIs.
+Optionally set `TYPESAFE_API_KEY` so the Home quick-add bar can guess the
+topic and fill in fields from plain text (`backend/quick_add.py`).
 
 ```sh
 pip install -r backend/requirements.txt

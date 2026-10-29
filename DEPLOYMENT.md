@@ -49,6 +49,7 @@ In the Vercel project → Settings → Environment Variables, set:
 | `GOOGLE_CLIENT_SECRET` | from step 2 |
 | `SECRET_KEY` | from step 2 |
 | `TRUST_PROXY` | `1` |
+| `TYPESAFE_API_KEY` | optional; TypeSafe key for the Home quick-add bar. Without it the bar still works but the user picks the topic and only the title is pre-filled |
 
 Never commit these or expose the service key to the frontend.
 
