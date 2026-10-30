@@ -1,4 +1,4 @@
-import type { Topic, Entry, PostDoc, Grant } from "../types";
+import type { Topic, Entry, PostDoc, Grant, QuickAddDraft } from "../types";
 import { prepareImage } from "../lib/image";
 import { loginPath } from "../lib/authPaths";
 import type { FieldPayload } from "../lib/fieldRows";
@@ -58,7 +58,7 @@ export function getTopics(): Promise<Topic[]> {
 export function addTopic(payload: {
   name: string;
   color: string | null;
-  layout: string;
+  layout?: string; // the server defaults to photo-top
   fields: FieldPayload[];
 }): Promise<Topic> {
   return fetch("/api/topics", {
@@ -74,13 +74,23 @@ export function getEntries(slug: string): Promise<Entry[]> {
 
 export function addEntry(
   slug: string,
-  payload: Record<string, string | number>,
+  payload: Record<string, string | number | PostDoc>,
 ): Promise<Entry> {
   return fetch(`/api/topics/${slug}/entries`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload),
   }).then((r) => json<Entry>(r));
+}
+
+/** A draft entry from one line of text; saves nothing. `today` is the
+ *  user's local day, so "yesterday" means their yesterday. */
+export function parseQuickAdd(text: string, today: string): Promise<QuickAddDraft> {
+  return fetch("/api/quick-add/parse", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ text, today }),
+  }).then((r) => json<QuickAddDraft>(r));
 }
 
 export function getEntry(slug: string, id: number): Promise<Entry> {

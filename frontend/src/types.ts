@@ -66,6 +66,18 @@ export interface DateRange {
   end: string;
 }
 
+// POST /api/quick-add/parse: a draft of field values for every topic (number
+// fields as numbers, pace as seconds), the topic the text most likely belongs
+// to (null when unsure), whether it's clear enough to save without asking,
+// and the topics to offer first.
+export interface QuickAddDraft {
+  topic: string | null;
+  clear: boolean; // safe to save without showing the draft
+  suggestions: string[];
+  date: string; // "YYYY-MM-DD"
+  drafts: Record<string, Record<string, string | number>>;
+}
+
 // One connected MCP app (GET /api/mcp/grants).
 export interface Grant {
   id: number;

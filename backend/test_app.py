@@ -158,6 +158,20 @@ def test_entry_without_post_has_no_body(client):
     assert "body" not in single.get_json()
 
 
+def test_new_entry_can_carry_its_post_body(client):
+    res = client.post("/api/topics/workout/entries", json={"date": "2026-07-09", "title": "Run", "body": DOC})
+    assert res.status_code == 201
+    assert res.get_json()["body"] == DOC
+    single = client.get(f"/api/topics/workout/entries/{res.get_json()['id']}")
+    assert single.get_json()["body"] == DOC
+
+
+def test_new_entry_with_a_bad_body_is_not_saved(client):
+    res = client.post("/api/topics/workout/entries", json={"date": "2026-07-09", "title": "Run", "body": "x"})
+    assert res.status_code == 400
+    assert client.get("/api/topics/workout/entries").get_json() == []
+
+
 def test_unknown_topic_and_entry_404(client):
     assert client.get("/api/topics/nope/entries").status_code == 404
     assert client.get("/api/topics/workout/entries/999").status_code == 404
@@ -1176,3 +1190,36 @@ def test_patch_topic_fields_rejects_bad_input_and_changes_nothing(client):
     assert client.patch("/api/topics/workout", json={
         "fields": [{"key": "title", "label": "x" * 25_000}]}).status_code == 400
     assert workout_fields(client) == before
+
+
+# --- Quick add ----------------------------------------------------------------
+
+def test_quick_add_parse_returns_a_draft(client, monkeypatch):
+    import quick_add
+    from datetime import date
+
+    def ask(state, questions):
+        assert [t["name"] for t in state["topics"]] == ["Workout", "Journal"]
+        return {
+            "topic": {"type": "choice", "choice": "workout", "probabilities": {"workout": 0.9}},
+            "f:workout:duration": {"type": "choice", "choice": "n1", "probabilities": {"n1": 0.9}},
+        }
+
+    monkeypatch.setattr(quick_add, "ask_jev", ask)
+    today = date.today().isoformat()
+    res = client.post("/api/quick-add/parse", json={"text": "  ran 5k in 27 min ", "today": today})
+    assert res.status_code == 200
+    body = res.get_json()
+    assert body["topic"] == "workout"
+    assert body["clear"] is True
+    assert body["date"] == today
+    assert body["drafts"]["workout"] == {"title": "Ran 5k in 27 min", "duration": 27}
+
+
+@pytest.mark.parametrize("payload", [{}, {"text": "   "}, {"text": 5}, {"text": "x" * 501}])
+def test_quick_add_parse_rejects_empty_or_long_text(client, monkeypatch, payload):
+    import quick_add
+    monkeypatch.setattr(quick_add, "ask_jev", lambda *a: pytest.fail("asked Jev"))
+    res = client.post("/api/quick-add/parse", json=payload)
+    assert res.status_code == 400
+    assert res.get_json()["error"]

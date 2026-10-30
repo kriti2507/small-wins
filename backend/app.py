@@ -9,6 +9,7 @@ from flask import Flask, g, jsonify, redirect, request
 import auth
 import db
 import grants
+import quick_add
 import storage
 
 # Local dev reads DB/storage config from backend/.env; on Vercel these come
@@ -422,8 +423,14 @@ def add_entry(slug):
 
     if len(json.dumps(entry)) > MAX_ENTRY_BYTES:
         return jsonify({"error": "That entry is too large."}), 400
+    # Optional: quick add saves what the user typed as the post in one go.
+    body = data.get("body")
+    if body is not None and not valid_body(body):
+        return jsonify({"error": "Invalid post body."}), 400
     db.save_entry(g.user_id, slug, entry, via=g.via)
-    return jsonify(entry), 201
+    if body is not None:
+        db.save_post(g.user_id, slug, entry["id"], body)
+    return jsonify(with_body(slug, entry)), 201
 
 
 @app.route("/api/topics/<slug>/entries/<int:entry_id>", methods=["GET"])
@@ -522,6 +529,24 @@ def delete_orphaned_images(candidates):
                 pass  # GIFs and older uploads have no thumbnail
         except Exception as exc:
             app.logger.warning("failed to delete storage object for %s: %s", url, exc)
+
+
+# --- Quick add -------------------------------------------------------------
+
+@app.route("/api/quick-add/parse", methods=["POST"])
+@auth.login_required
+def quick_add_parse():
+    """Turn one line of text into a draft entry; saves nothing (see
+    quick_add.py). The client saves the confirmed draft as a normal entry."""
+    data = request.get_json(force=True, silent=True) or {}
+    text = data.get("text")
+    text = text.strip() if isinstance(text, str) else ""
+    if not text:
+        return jsonify({"error": "Type a win first."}), 400
+    if len(text) > quick_add.MAX_TEXT_CHARS:
+        return jsonify({"error": f"Keep it under {quick_add.MAX_TEXT_CHARS} characters."}), 400
+    today = quick_add.parse_today(data.get("today"))
+    return jsonify(quick_add.parse(db.load_topics(g.user_id), text, today))
 
 
 # --- Export ----------------------------------------------------------------
