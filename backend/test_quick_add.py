@@ -107,13 +107,39 @@ def test_the_same_day_twice_is_one_candidate():
 
 def test_phrases_are_the_whole_text_then_its_clauses():
     assert phrases("ran 5k in 27 min, legs felt great and slept well") == [
-        "ran 5k in 27 min, legs felt great and slept well",
-        "ran 5k in 27 min", "legs felt great", "slept well",
+        "Ran 5k in 27 min, legs felt great and slept well",
+        "Ran 5k in 27 min", "Legs felt great", "Slept well",
     ]
 
 
 def test_a_single_clause_is_one_phrase():
-    assert phrases("made lasagna") == ["made lasagna"]
+    assert phrases("made lasagna") == ["Made lasagna"]
+
+
+def title(text):
+    return qa.extract_candidates(text, TODAY)["title"]
+
+
+@pytest.mark.parametrize("text, expected", [
+    ("i did a 30 min workout today", "30 min workout"),
+    ("finally finished Dune, 40 pages", "Finished Dune"),
+    ("went for a walk yesterday", "Walk"),
+    ("I just had a great run!", "Great run"),
+    ("ran 5k on monday", "Ran 5k"),
+    ("did yoga this morning lol", "Yoga"),
+    ("made lasagna", "Made lasagna"),
+    ("did my homework finally", "Homework"),
+    ("today", "Today"),  # nothing left once trimmed: keep what was typed
+])
+def test_the_title_is_the_first_clause_without_filler(text, expected):
+    assert title(text) == expected
+
+
+def test_trimmed_titles_are_offered_alongside_what_was_typed():
+    assert phrases("i did a 30 min workout today") == ["I did a 30 min workout today", "30 min workout"]
+    assert phrases("finally finished Dune, 40 pages") == [
+        "Finally finished Dune, 40 pages", "Finished Dune", "Finally finished Dune", "40 pages",
+    ]
 
 
 # --- Fields, questions and drafts ---------------------------------------------
@@ -159,7 +185,7 @@ def test_only_pace_fields_take_paces():
 
 
 def test_text_fields_take_phrases():
-    assert options("ran 5k, felt great", TITLE) == {"p0": "ran 5k, felt great", "p1": "ran 5k", "p2": "felt great"}
+    assert options("ran 5k, felt great", TITLE) == {"p0": "Ran 5k, felt great", "p1": "Ran 5k", "p2": "Felt great"}
 
 
 def questions(text):
@@ -213,10 +239,10 @@ def test_a_confident_answer_makes_a_full_draft():
     assert d["topic"] == "workout"
     assert d["suggestions"] == ["workout"]
     assert d["date"] == "2026-10-29"
-    assert d["drafts"]["workout"] == {"title": "ran 5k in 27 min", "duration": 27}
+    assert d["drafts"]["workout"] == {"title": "Ran 5k in 27 min", "duration": 27}
     # Every topic gets a draft, so the user can switch without asking again.
     assert d["drafts"]["run"] == {"distance": 5}
-    assert d["drafts"]["journal"] == {"title": "ran 5k in 27 min, legs felt great"}
+    assert d["drafts"]["journal"] == {"title": "Ran 5k in 27 min"}
 
 
 def test_an_unsure_topic_is_left_for_the_user_with_suggestions():
@@ -233,7 +259,7 @@ def test_none_of_these_means_no_topic():
 
 def test_an_unsure_field_stays_blank():
     d = draft("ran 5k in 27 min", {"topic": choice("workout", 0.9), "f:workout:duration": choice("n1", 0.3)})
-    assert d["drafts"]["workout"] == {"title": "ran 5k in 27 min"}
+    assert d["drafts"]["workout"] == {"title": "Ran 5k in 27 min"}
 
 
 def test_a_field_answer_naming_an_unknown_candidate_is_ignored():
@@ -241,9 +267,14 @@ def test_a_field_answer_naming_an_unknown_candidate_is_ignored():
     assert "duration" not in d["drafts"]["workout"]
 
 
-def test_the_title_falls_back_to_the_whole_text():
-    d = draft("ran 5k, felt great", {"f:workout:title": choice("_none", 0.9)})
-    assert d["drafts"]["workout"]["title"] == "ran 5k, felt great"
+def test_the_title_falls_back_to_the_trimmed_first_clause():
+    d = draft("i ran 5k, felt great", {"f:workout:title": choice("_none", 0.9)})
+    assert d["drafts"]["workout"]["title"] == "Ran 5k"
+
+
+def test_the_first_text_field_is_asked_for_a_short_heading():
+    q = questions("ran 5k in 27 min")
+    assert "short" in q["f:workout:title"]["instructions"]
 
 
 def test_the_date_comes_from_the_answer():
@@ -259,8 +290,8 @@ def test_without_a_date_answer_a_single_date_found_is_used():
 def test_no_answers_at_all_still_drafts_the_titles():
     d = draft("ran 5k", {})
     assert d["topic"] is None and d["suggestions"] == []
-    assert d["drafts"] == {"workout": {"title": "ran 5k"}, "journal": {"title": "ran 5k"},
-                           "reading": {"title": "ran 5k"}, "run": {}}
+    assert d["drafts"] == {"workout": {"title": "Ran 5k"}, "journal": {"title": "Ran 5k"},
+                           "reading": {"title": "Ran 5k"}, "run": {}}
 
 
 # --- Jev client and parse -----------------------------------------------------
@@ -349,7 +380,7 @@ def test_parse_without_jev_still_drafts(monkeypatch):
     d = qa.parse(TOPICS, "journaled yesterday", TODAY)
     assert d["topic"] is None and d["suggestions"] == []
     assert d["date"] == "2026-10-28"
-    assert d["drafts"]["journal"] == {"title": "journaled yesterday"}
+    assert d["drafts"]["journal"] == {"title": "Journaled"}
 
 
 def test_parse_with_no_topics_skips_jev(monkeypatch):

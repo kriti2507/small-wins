@@ -187,25 +187,56 @@ def _numbers(text, taken):
     return out
 
 
-def _phrases(text):
-    parts = re.split(r"[,;!?\n]+|\.(?!\d)|\s+(?:and|but|then)\s+", text, flags=re.IGNORECASE)
+# Words that open a sentence without saying what the win was: "I just did a
+# 30 min workout" -> "30 min workout". Stripped from the front, in this order.
+LEAD_FILLER = re.compile(r"^(?:i|i've|ive|i'm|im|we|we've|just|finally|also|so|and|then|actually|really)\s+", re.I)
+LIGHT_VERB = re.compile(r"^(?:did|do|done|had|took|went\s+for|went\s+on)\s+", re.I)
+ARTICLE = re.compile(r"^(?:a|an|the|my|some)\s+", re.I)
+TRAIL_FILLER = re.compile(r"(?:[\s,.!?;:-]+|\s+(?:lol|haha|yay|woo+|finally|again)\b)+$", re.I)
+
+
+def _capitalize(p):
+    return p[:1].upper() + p[1:]
+
+
+def _trim(clause, date_spans):
+    """clause as a diary heading: without its dates or the filler around
+    them; "" when nothing is left."""
+    for span in date_spans:
+        clause = re.sub(r"\s*\b(?:on\s+|from\s+)?" + re.escape(span) + r"\b", "", clause, flags=re.I)
+    clause = TRAIL_FILLER.sub("", clause.strip())
+    for pattern in (LEAD_FILLER, LIGHT_VERB, ARTICLE):
+        while pattern.match(clause):
+            clause = pattern.sub("", clause, count=1)
+    return TRAIL_FILLER.sub("", clause).strip()
+
+
+def _phrases(text, date_spans):
+    """Text-field options: the whole text, then each clause trimmed to a
+    heading and as typed. Returns (options, title): title is the first
+    clause trimmed, the fallback when Jev doesn't pick one."""
+    clauses = [c.strip(" \t-–—") for c in
+               re.split(r"[,;!?\n]+|\.(?!\d)|\s+(?:and|but|then)\s+", text, flags=re.IGNORECASE)]
+    clauses = [c for c in clauses if len(c) >= 2]
     out, seen = [], set()
-    for p in [text, *parts]:
-        p = p.strip(" \t-–—")
+    for p in [text.strip(" \t-–—"), *(v for c in clauses for v in (_trim(c, date_spans), c))]:
         if len(p) < 2 or p.lower() in seen:
             continue
         seen.add(p.lower())
-        out.append({"id": f"p{len(out)}", "text": p})
-    return out[:MAX_PHRASES]
+        out.append({"id": f"p{len(out)}", "text": _capitalize(p)})
+    title = (_trim(clauses[0], date_spans) or clauses[0]) if clauses else text.strip()
+    return out[:MAX_PHRASES], _capitalize(title)
 
 
 def extract_candidates(text, today):
     """Every value the text offers: {"numbers", "dates", "phrases"}, each a
-    list of dicts with an "id" Jev's answers refer to. Dates are read first so
-    their digits never come back as numbers."""
+    list of dicts with an "id" Jev's answers refer to, plus "title", the
+    heading to use when Jev doesn't pick one. Dates are read first so their
+    digits never come back as numbers."""
     taken = []
     found_dates = _dates(text, today, taken)
-    return {"numbers": _numbers(text, taken), "dates": found_dates, "phrases": _phrases(text)}
+    phrases, title = _phrases(text, [d["span"] for d in found_dates])
+    return {"numbers": _numbers(text, taken), "dates": found_dates, "phrases": phrases, "title": title}
 
 
 # --- Questions and drafts -----------------------------------------------------
@@ -292,11 +323,15 @@ def build_questions(topics, cands, today):
         },
     }}
     for t in topics:
+        first_text = next((f for f in t["fields"] if f["type"] == "text"), None)
         for f in t["fields"]:
             opts = field_options(f, cands)
             if not opts:
                 continue
-            if f["type"] == "text":
+            if f is first_text:
+                ask = (f"which option is the best “{f['label']}” for the entry: a short diary "
+                       f"heading of a few words naming the win, without filler?")
+            elif f["type"] == "text":
                 ask = f"which part of the message is the best “{f['label']}” for the entry?"
             else:
                 ask = f"which value from the message is its “{f['label']}”?"
@@ -326,7 +361,7 @@ def _chosen(answers, qid):
     return c, probs.get(c, 0) if isinstance(probs, dict) else 0
 
 
-def _topic_draft(t, cands, answers, text):
+def _topic_draft(t, cands, answers):
     values = {}
     for f in t["fields"]:
         opts = field_options(f, cands)
@@ -335,7 +370,7 @@ def _topic_draft(t, cands, answers, text):
             values[f["key"]] = opts[c][0]
     first_text = next((f for f in t["fields"] if f["type"] == "text"), None)
     if first_text and first_text["key"] not in values:
-        values[first_text["key"]] = text
+        values[first_text["key"]] = cands["title"]
     return values
 
 
@@ -351,7 +386,6 @@ def to_draft(topics, cands, answers, today):
     """The parse response: the likely topic (None when unsure), suggestions
     for the topic chips, the day, and a draft of field values per topic."""
     slugs = [t["slug"] for t in topics]
-    text = cands["phrases"][0]["text"] if cands["phrases"] else ""
     c, p = _chosen(answers, "topic")
     probs = (answers.get("topic") or {}).get("probabilities") or {}
     ranked = sorted((s for s in slugs if probs.get(s, 0) >= SUGGESTION_MIN), key=lambda s: -probs[s])
@@ -359,7 +393,7 @@ def to_draft(topics, cands, answers, today):
         "topic": c if c in slugs and p >= TOPIC_THRESHOLD else None,
         "suggestions": ranked[:MAX_SUGGESTIONS],
         "date": _draft_date(cands, answers, today),
-        "drafts": {t["slug"]: _topic_draft(t, cands, answers, text) for t in topics},
+        "drafts": {t["slug"]: _topic_draft(t, cands, answers) for t in topics},
     }
 
 

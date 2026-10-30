@@ -1212,7 +1212,7 @@ def test_quick_add_parse_returns_a_draft(client, monkeypatch):
     body = res.get_json()
     assert body["topic"] == "workout"
     assert body["date"] == today
-    assert body["drafts"]["workout"] == {"title": "ran 5k in 27 min", "duration": 27}
+    assert body["drafts"]["workout"] == {"title": "Ran 5k in 27 min", "duration": 27}
 
 
 @pytest.mark.parametrize("payload", [{}, {"text": "   "}, {"text": 5}, {"text": "x" * 501}])
