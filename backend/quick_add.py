@@ -246,6 +246,9 @@ TOPIC_THRESHOLD = 0.6  # below this the UI asks "Which topic?"
 FIELD_THRESHOLD = 0.5  # below this a field (or the date) is left to the user
 SUGGESTION_MIN = 0.1  # topics this likely lead the "Which topic?" chips
 MAX_SUGGESTIONS = 3
+# Stricter cut-offs for saving without showing the draft at all.
+CLEAR_TOPIC_THRESHOLD = 0.8
+CLEAR_ANSWER_THRESHOLD = 0.7
 
 # A unit named in a field's label -> what the field takes, first match wins.
 # A bare "Duration" or "Time" reads as minutes, "Distance" as km.
@@ -382,15 +385,37 @@ def _draft_date(cands, answers, today):
     return cands["dates"][0]["date"] if len(cands["dates"]) == 1 else today.isoformat()
 
 
+def _clear(t, cands, answers):
+    """Whether a draft for topic t is safe to save unseen: every number the
+    text could put in one of its fields, and the day if one is named, was
+    answered confidently (a value, or "not mentioned")."""
+    for f in t["fields"]:
+        if f["type"] == "text":
+            continue  # the title always has a fallback
+        opts = field_options(f, cands)
+        c, p = _chosen(answers, f"f:{t['slug']}:{f['key']}")
+        if opts and not (p >= CLEAR_ANSWER_THRESHOLD and (c in opts or c == NONE)):
+            return False
+    if cands["dates"]:
+        c, p = _chosen(answers, "date")
+        if p < CLEAR_ANSWER_THRESHOLD:
+            return False
+    return True
+
+
 def to_draft(topics, cands, answers, today):
-    """The parse response: the likely topic (None when unsure), suggestions
-    for the topic chips, the day, and a draft of field values per topic."""
+    """The parse response: the likely topic (None when unsure), whether the
+    draft is clear enough to save without asking, suggestions for the topic
+    chips, the day, and a draft of field values per topic."""
     slugs = [t["slug"] for t in topics]
     c, p = _chosen(answers, "topic")
     probs = (answers.get("topic") or {}).get("probabilities") or {}
     ranked = sorted((s for s in slugs if probs.get(s, 0) >= SUGGESTION_MIN), key=lambda s: -probs[s])
+    topic = c if c in slugs and p >= TOPIC_THRESHOLD else None
     return {
-        "topic": c if c in slugs and p >= TOPIC_THRESHOLD else None,
+        "topic": topic,
+        "clear": topic is not None and p >= CLEAR_TOPIC_THRESHOLD
+                 and _clear(next(t for t in topics if t["slug"] == topic), cands, answers),
         "suggestions": ranked[:MAX_SUGGESTIONS],
         "date": _draft_date(cands, answers, today),
         "drafts": {t["slug"]: _topic_draft(t, cands, answers) for t in topics},

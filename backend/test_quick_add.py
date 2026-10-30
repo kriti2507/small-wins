@@ -399,3 +399,45 @@ def test_parse_with_no_topics_skips_jev(monkeypatch):
 ])
 def test_parse_today_trusts_the_client_within_a_day(value, expected):
     assert qa.parse_today(value, TODAY) == expected
+
+
+# --- Clear enough to save without asking ---------------------------------------
+
+def test_a_confident_parse_is_clear():
+    d = draft("ran 5k in 27 min", {"topic": choice("workout", 0.9), "f:workout:duration": choice("n1", 0.9)})
+    assert d["clear"] is True
+
+
+def test_a_likely_but_not_sure_topic_is_prefilled_but_not_clear():
+    d = draft("ran 5k in 27 min", {"topic": choice("workout", 0.7), "f:workout:duration": choice("n1", 0.9)})
+    assert d["topic"] == "workout"
+    assert d["clear"] is False
+
+
+def test_an_unsure_value_is_not_clear():
+    d = draft("ran 5k in 27 min", {"topic": choice("workout", 0.9), "f:workout:duration": choice("n1", 0.6)})
+    assert d["clear"] is False
+
+
+def test_an_unanswered_value_is_not_clear():
+    assert draft("ran 5k in 27 min", {"topic": choice("workout", 0.9)})["clear"] is False
+
+
+def test_a_confident_not_mentioned_is_clear():
+    d = draft("ran 5k in 27 min", {"topic": choice("workout", 0.9), "f:workout:duration": choice("_none", 0.9)})
+    assert d["clear"] is True
+
+
+def test_nothing_to_fill_is_clear():
+    assert draft("did yoga", {"topic": choice("workout", 0.9)})["clear"] is True
+
+
+def test_an_unsure_day_is_not_clear():
+    sure = {"topic": choice("journal", 0.9), "date": choice("d0", 0.9)}
+    unsure = {"topic": choice("journal", 0.9), "date": choice("d0", 0.6)}
+    assert draft("journaled yesterday", sure)["clear"] is True
+    assert draft("journaled yesterday", unsure)["clear"] is False
+
+
+def test_without_answers_nothing_is_clear():
+    assert draft("ran 5k", {})["clear"] is False

@@ -1211,6 +1211,7 @@ def test_quick_add_parse_returns_a_draft(client, monkeypatch):
     assert res.status_code == 200
     body = res.get_json()
     assert body["topic"] == "workout"
+    assert body["clear"] is True
     assert body["date"] == today
     assert body["drafts"]["workout"] == {"title": "Ran 5k in 27 min", "duration": 27}
 
