@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import type { QuickAddDraft, Topic } from "../types";
-import { addEntry, deleteEntry, parseQuickAdd, uploadImage } from "../api/client";
+import { addEntry, deleteEntry, parseQuickAdd, uploadImage, type EntrySource } from "../api/client";
 import { isoDate } from "../lib/dates";
 import { MAX_TEXT, draftValues, savePayload, titleOf } from "../lib/quickAdd";
 import QuickAddCard from "./QuickAddCard";
@@ -70,11 +70,17 @@ export default function QuickAdd({ topics, onSaved }: Props) {
   }
 
   /** Save values to topic; throws with a readable message. */
-  async function save(topic: Topic, vals: Record<string, string>, sent: Sent, photo: File | null) {
+  async function save(
+    topic: Topic,
+    vals: Record<string, string>,
+    sent: Sent,
+    photo: File | null,
+    via: EntrySource,
+  ) {
     const payload = savePayload(topic, vals, sent.text);
     if ("error" in payload) throw new Error(payload.error);
     if (photo) payload.data.image = (await uploadImage(photo)).url;
-    const entry = await addEntry(topic.slug, payload.data);
+    const entry = await addEntry(topic.slug, payload.data, via);
     discard();
     setText("");
     setLogged({ ...sent, topic, id: entry.id, values: vals });
@@ -94,7 +100,7 @@ export default function QuickAdd({ topics, onSaved }: Props) {
       const topic = topics.find((t) => t.slug === parsed.topic);
       discard();
       if (parsed.clear && topic) {
-        await save(topic, draftValues(topic, parsed), sent, null);
+        await save(topic, draftValues(topic, parsed), sent, null, "quick");
       } else {
         setDraft(sent);
         if (topic) pick(topic.slug, parsed);
@@ -113,7 +119,7 @@ export default function QuickAdd({ topics, onSaved }: Props) {
     setBusy(true);
     setError("");
     try {
-      await save(topic, values, draft, file);
+      await save(topic, values, draft, file, "quick-card");
     } catch (err) {
       setError((err as Error).message || "Could not save entry.");
     } finally {

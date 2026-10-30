@@ -8,8 +8,12 @@
 --   users.last_seen_at   last sign-in or app open.
 --   entries.created_at   when the entry was logged (entries.date is the day
 --                        the person picked, which can be in the past).
---   entries.via          'web' or 'mcp' (a connected app like Claude). Null =
---                        logged before tracking.
+--   entries.via          how it was logged: 'web' (the add-entry form),
+--                        'quick' (Home's quick-add bar, saved straight away),
+--                        'quick-card' (quick-add bar, saved from its draft
+--                        card), or 'mcp' (a connected app like Claude). Null =
+--                        logged before tracking. Quick-add entries before
+--                        2026-10-30 are 'web'.
 -- Entries logged before the migration all share its created_at, so ignore
 -- that one day in the daily numbers.
 
@@ -41,17 +45,20 @@ group by 1 order by 2 desc;
 select created_at::date as day,
        count(distinct user_id)                               as people_logging,
        count(*)                                              as entries,
-       count(*) filter (where via = 'web')                   as via_web,
+       count(*) filter (where via = 'web')                   as via_form,
+       count(*) filter (where via = 'quick')                 as via_quick,
+       count(*) filter (where via = 'quick-card')            as via_quick_card,
        count(*) filter (where via = 'mcp')                   as via_mcp
 from entries
 group by 1 order by 1 desc
 limit 60;
 
 
--- 5. Web vs connected app, per person (who uses Claude to log?)
+-- 5. How each person logs: form, quick-add bar, or a connected app
 select u.email,
-       count(*) filter (where e.via = 'web') as via_web,
-       count(*) filter (where e.via = 'mcp') as via_mcp,
+       count(*) filter (where e.via = 'web')                       as via_form,
+       count(*) filter (where e.via in ('quick', 'quick-card'))    as via_quick_add,
+       count(*) filter (where e.via = 'mcp')                       as via_mcp,
        max(e.created_at)                     as last_logged
 from entries e join users u on u.id = e.user_id
 group by u.email order by last_logged desc nulls last;
@@ -93,4 +100,21 @@ select date_trunc('week', u.created_at)::date as signup_week,
          where e.user_id = u.id and e.created_at > u.created_at + interval '7 days'
        )) as still_logging_after_a_week
 from users u
+group by 1 order by 1 desc;
+
+
+-- 10. Quick-add bar, per week: how many wins went through it, and how often
+-- Jev was sure enough to save without showing the draft card. A low
+-- auto_saved_pct means the card is doing most of the work (an unsure topic,
+-- value or day); undone quick adds are deleted, so they don't appear here.
+select date_trunc('week', created_at)::date as week,
+       count(*) filter (where via in ('quick', 'quick-card'))  as quick_adds,
+       count(*) filter (where via = 'quick')                   as auto_saved,
+       count(*) filter (where via = 'quick-card')              as from_card,
+       round(100.0 * count(*) filter (where via = 'quick')
+             / nullif(count(*) filter (where via in ('quick', 'quick-card')), 0)) as auto_saved_pct,
+       round(100.0 * count(*) filter (where via in ('quick', 'quick-card'))
+             / nullif(count(*) filter (where via in ('web', 'quick', 'quick-card')), 0)) as quick_share_of_web_pct
+from entries
+where created_at >= '2026-10-30'
 group by 1 order by 1 desc;
