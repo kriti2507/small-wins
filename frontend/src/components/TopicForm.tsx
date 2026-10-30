@@ -22,15 +22,16 @@ interface Props {
   onCancel: () => void;
 }
 
-// Create or edit a topic: name, color, layout, and its ordered fields. An
-// existing field's type is locked (its values were stored as that type);
-// remove it and add a new one to change it. Nothing is saved until Save.
+// Create or edit a topic: name, color, and its ordered fields. An existing
+// field's type is locked (its values were stored as that type); remove it and
+// add a new one to change it. Nothing is saved until Save. Tile layout isn't
+// asked here: new topics get the server's default (photo on top) and it's
+// switched on the topic page, which saves it for that topic.
 export default function TopicForm({ topic, entries = [], onSaved, onCancel }: Props) {
   const [name, setName] = useState(topic?.name ?? "");
   const [color, setColor] = useState<string>(topic?.color ?? PALETTE_ORDER[0]);
   // Field rows are tinted with the chosen color so each one reads as a block.
   const ramp = PALETTES[color] ?? PALETTES[PALETTE_ORDER[0]];
-  const [layout, setLayout] = useState<string>(topic?.layout ?? "photo-top");
   const [rows, setRows] = useState<FieldRow[]>(() => (topic ? rowsFromTopic(topic) : [emptyRow()]));
   // Id of the row whose removal is awaiting confirmation. Tracked by id (not
   // index) so reordering the rows doesn't have to disturb it.
@@ -75,16 +76,15 @@ export default function TopicForm({ topic, entries = [], onSaved, onCancel }: Pr
         alert("Every field needs a label.");
         return;
       }
-      updateTopic(topic.slug, { name, color, layout, fields })
+      updateTopic(topic.slug, { name, color, fields })
         .then(onSaved)
         .catch((err) => alert(err.message || "Error"));
       return;
     }
-    addTopic({ name, color, layout, fields })
+    addTopic({ name, color, fields })
       .then(() => {
         setName("");
         setColor(PALETTE_ORDER[0]);
-        setLayout("photo-top");
         setRows([emptyRow()]);
         onSaved();
       })
@@ -111,14 +111,6 @@ export default function TopicForm({ topic, entries = [], onSaved, onCancel }: Pr
         <span className="color-field-label">Color</span>
         <ColorPicker selected={color} onSelect={setColor} />
       </div>
-
-      <label>
-        Tile layout
-        <select value={layout} onChange={(e) => setLayout(e.target.value)}>
-          <option value="photo-top">Photo on top</option>
-          <option value="thumbnail">Side thumbnail</option>
-        </select>
-      </label>
 
       <div
         className="field-list"

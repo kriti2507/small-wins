@@ -58,7 +58,7 @@ export function getTopics(): Promise<Topic[]> {
 export function addTopic(payload: {
   name: string;
   color: string | null;
-  layout: string;
+  layout?: string; // the server defaults to photo-top
   fields: FieldPayload[];
 }): Promise<Topic> {
   return fetch("/api/topics", {

@@ -36,3 +36,16 @@ describe("TopicForm (edit mode)", () => {
     expect(html).toMatch(/aria-label="Move Duration down"[^>]*disabled/);
   });
 });
+
+describe("TopicForm layout", () => {
+  // Layout defaults to photo-on-top and is switched on the topic page.
+  it("doesn't ask about tile layout when creating or editing", () => {
+    for (const html of [
+      renderToStaticMarkup(<TopicForm onSaved={noop} onCancel={noop} />),
+      render(),
+    ]) {
+      expect(html).not.toContain("Tile layout");
+      expect(html).not.toContain("Side thumbnail");
+    }
+  });
+});
