@@ -398,6 +398,19 @@ def get_entries(slug):
     return jsonify([with_body(slug, e) for e in db.load_entries(g.user_id, slug)])
 
 
+# How a browser entry was made, for analytics, sent as ?via= (the JSON body is
+# keyed by the topic's own fields): the home quick-add bar saving straight
+# away, or from its draft card. Anything else in the browser is 'web'.
+QUICK_ADD_SOURCES = ("quick", "quick-card")
+
+
+def entry_source():
+    """entries.via for a new entry: 'mcp' for a connected app whatever it
+    claims, else the quick-add source the browser named, else 'web'."""
+    via = request.args.get("via")
+    return via if g.via == "web" and via in QUICK_ADD_SOURCES else g.via
+
+
 @app.route("/api/topics/<slug>/entries", methods=["POST"])
 @auth.login_required
 def add_entry(slug):
@@ -427,7 +440,7 @@ def add_entry(slug):
     body = data.get("body")
     if body is not None and not valid_body(body):
         return jsonify({"error": "Invalid post body."}), 400
-    db.save_entry(g.user_id, slug, entry, via=g.via)
+    db.save_entry(g.user_id, slug, entry, via=entry_source())
     if body is not None:
         db.save_post(g.user_id, slug, entry["id"], body)
     return jsonify(with_body(slug, entry)), 201

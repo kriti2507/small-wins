@@ -72,11 +72,16 @@ export function getEntries(slug: string): Promise<Entry[]> {
   return fetch(`/api/topics/${slug}/entries`).then((r) => json<Entry[]>(r));
 }
 
+/** How a browser entry was made, for analytics (entries.via): the quick-add
+ *  bar saving straight away, or from its draft card. Omitted = the form. */
+export type EntrySource = "quick" | "quick-card";
+
 export function addEntry(
   slug: string,
   payload: Record<string, string | number | PostDoc>,
+  via?: EntrySource,
 ): Promise<Entry> {
-  return fetch(`/api/topics/${slug}/entries`, {
+  return fetch(`/api/topics/${slug}/entries${via ? `?via=${via}` : ""}`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload),

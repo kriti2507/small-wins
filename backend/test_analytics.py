@@ -4,6 +4,7 @@ seen. See backend/analytics.sql for the queries."""
 import os
 
 import psycopg
+import pytest
 from psycopg.rows import dict_row
 
 from conftest import make_grant
@@ -43,6 +44,33 @@ def test_an_entry_logged_by_a_connected_app_is_marked_mcp(client, test_db):
     slug = make_topic(client, app_headers)
     res = client.post(f"/api/topics/{slug}/entries", json={}, headers=app_headers)
     assert res.status_code == 201
+    [row] = query(test_db, "select via from entries")
+    assert row["via"] == "mcp"
+
+
+@pytest.mark.parametrize("via", ["quick", "quick-card"])
+def test_a_quick_add_is_marked_by_how_it_was_saved(client, test_db, via):
+    slug = make_topic(client)
+    res = client.post(f"/api/topics/{slug}/entries?via={via}", json={"date": "2026-01-01"})
+    assert res.status_code == 201
+    [row] = query(test_db, "select via from entries")
+    assert row["via"] == via
+
+
+def test_an_unknown_source_is_marked_web(client, test_db):
+    slug = make_topic(client)
+    client.post(f"/api/topics/{slug}/entries?via=mcp", json={})
+    client.post(f"/api/topics/{slug}/entries?via=anything", json={})
+    assert [r["via"] for r in query(test_db, "select via from entries")] == ["web", "web"]
+
+
+def test_a_connected_app_cant_pass_as_a_quick_add(client, test_db):
+    _, credential = make_grant(me_id(client))
+    app_headers = {"Authorization": f"Bearer {credential}"}
+    with client.session_transaction() as s:
+        s.clear()
+    slug = make_topic(client, app_headers)
+    client.post(f"/api/topics/{slug}/entries?via=quick", json={}, headers=app_headers)
     [row] = query(test_db, "select via from entries")
     assert row["via"] == "mcp"
 
