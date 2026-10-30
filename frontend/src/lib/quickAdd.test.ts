@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import type { QuickAddDraft, Topic } from "../types";
-import { chipOrder, draftValues, fieldPayload, textDoc } from "./quickAdd";
+import { chipOrder, draftValues, fieldPayload, savePayload, textDoc, titleOf } from "./quickAdd";
 
 const run: Topic = {
   slug: "run",
@@ -18,6 +18,7 @@ const sleep: Topic = { ...run, slug: "sleep", name: "Sleep", fields: [] };
 
 const draft: QuickAddDraft = {
   topic: "run",
+  clear: true,
   suggestions: ["run"],
   date: "2026-10-28",
   drafts: { run: { title: "easy 5k", distance: 5, pace: 515 }, journal: { title: "easy 5k" }, sleep: {} },
@@ -75,5 +76,34 @@ describe("fieldPayload", () => {
 
   it("reports a pace it can't read", () => {
     expect(fieldPayload(run, { pace: "fast" })).toEqual({ error: "Pace: use min'sec, e.g. 8'35\" or 8:35" });
+  });
+});
+
+describe("savePayload", () => {
+  it("is the field payload plus the typed text as the post", () => {
+    expect(savePayload(run, draftValues(run, draft), "easy 5k at 8'35\"")).toEqual({
+      data: {
+        date: "2026-10-28",
+        title: "easy 5k",
+        distance: "5",
+        pace: 515,
+        body: textDoc("easy 5k at 8'35\""),
+      },
+    });
+  });
+
+  it("passes a pace error through", () => {
+    expect(savePayload(run, { pace: "fast" }, "x")).toEqual({ error: "Pace: use min'sec, e.g. 8'35\" or 8:35" });
+  });
+});
+
+describe("titleOf", () => {
+  it("is the first text field's value", () => {
+    expect(titleOf(run, { title: "easy 5k", distance: "5" })).toBe("easy 5k");
+  });
+
+  it("is empty without a text field or value", () => {
+    expect(titleOf(sleep, {})).toBe("");
+    expect(titleOf(run, {})).toBe("");
   });
 });

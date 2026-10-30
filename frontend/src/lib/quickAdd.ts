@@ -51,3 +51,20 @@ export function fieldPayload(
   }
   return { data };
 }
+
+/** The whole add-entry request for a quick add: the fields, plus what the
+ *  user typed as the post. */
+export function savePayload(
+  topic: Topic,
+  values: Record<string, string>,
+  text: string,
+): { data: Record<string, string | number | PostDoc> } | { error: string } {
+  const fields = fieldPayload(topic, values);
+  return "error" in fields ? fields : { data: { ...fields.data, body: textDoc(text) } };
+}
+
+/** The entry's heading: its first text field's value, or "". */
+export function titleOf(topic: Topic, values: Record<string, string>): string {
+  const f = topic.fields.find((f) => f.type === "text");
+  return f ? values[f.key] ?? "" : "";
+}

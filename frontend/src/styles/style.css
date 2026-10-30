@@ -145,6 +145,22 @@ h3 {
   color: var(--ink-muted);
 }
 
+/* Undo reads as a link beside "View", like the tip bubble's skip link. */
+.quick-add-logged .quick-add-undo {
+  padding: 0;
+  background: none;
+  border: none;
+  color: inherit;
+  font-size: inherit;
+  text-decoration: underline;
+  box-shadow: none;
+}
+
+.quick-add-logged .quick-add-undo:hover {
+  box-shadow: none;
+  transform: none;
+}
+
 /* Time capsule */
 .capsule {
   background: var(--card);
